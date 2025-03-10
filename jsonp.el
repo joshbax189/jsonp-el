@@ -44,16 +44,22 @@ Backslashes are not removed from POINTER.
 
 Returns the value at the given pointer, or signals an error if the
 pointer is invalid or the value does not exist.  Returns OBJECT
-itself if POINTER is an empty string."
+itself if POINTER is an empty string.
+
+If the pointer begins with a #, it is treated as a URL fragment and
+first decoded before further resolving."
+  (when (string-prefix-p "#/" pointer)
+    (setq pointer (url-unhex-string (string-remove-prefix "#" pointer))))
+
   (if (or (not pointer)
           (string-equal pointer ""))
       object
+    (unless (string-prefix-p "/" pointer)
+      (error "Malformed JSON pointer %s" pointer))
     (let ((parts (split-string pointer "/")))
       (if (string-equal (car parts) "") ; Remove leading empty string
           (setq parts (cdr parts)))
       (jsonp-resolve-recursive object parts))))
-;; TODO probably support pointers like #/foo/bar/baz
-;; TODO also check that "foo" fails, as does "#foo"
 
 (defun jsonp--unescape-token (token)
   "Replace the special sequences ~1 and ~0 in TOKEN string."

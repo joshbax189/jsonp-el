@@ -34,6 +34,17 @@
   (let ((example (json-parse-string "{\"a\": {\"b\": [{\"c\": 1}, {\"c\": 2}]}, \"d\": \"value\"}")))
     (should (equal (jsonp-resolve example nil) example))))
 
+(ert-deftest jsonp-resolve/test-uri-fragment ()
+  "Should allow a # prefix in pointer."
+  (let ((example (json-parse-string "{\"a\": {\"b\": [{\"c\": 1}, {\"c\": 2}]}, \"d\": \"value\"}")))
+    (should (equal (jsonp-resolve example "#/a/b/0/c") 1))))
+
+(ert-deftest jsonp-resolve/test-malformed ()
+  "Should require a leading forward slash."
+  (let ((example (json-parse-string "{\"a\": {\"b\": [{\"c\": 1}, {\"c\": 2}]}, \"d\": \"value\"}")))
+    (should-error (jsonp-resolve example "a/b/0"))
+    (should-error (jsonp-resolve example "foo/a/b/0"))))
+
 (ert-deftest jsonp-resolve/test-numeric-index ()
   "Resolves a value using a numeric index in an array."
   (let ((example (json-parse-string "{\"arr\": [10, 20, 30]}"))
@@ -91,6 +102,7 @@
         (expected "value1"))
     (should (equal (jsonp-resolve example "/arr/1") expected))))
 
+;; TODO
 (ert-deftest jsonp-resolve/test-non-unique ()
   "Non-unique names should error."
   (let ((example (json-parse-string "{\"a\": 1, \"a\": 2}")))
