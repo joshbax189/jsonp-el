@@ -48,7 +48,8 @@ itself if POINTER is an empty string.
 
 If the pointer begins with a #, it is treated as a URL fragment and
 first decoded before further resolving."
-  (when (string-prefix-p "#/" pointer)
+  (when (or (string-prefix-p "#/" pointer)
+            (string-equal "#" pointer))
     (setq pointer (url-unhex-string (string-remove-prefix "#" pointer))))
 
   (if (or (not pointer)

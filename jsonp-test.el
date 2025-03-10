@@ -103,7 +103,7 @@
     (should (equal (jsonp-resolve example "/arr/1") expected))))
 
 (ert-deftest jsonp-resolve/test-escaping ()
-  "Resolves pointers including escape sequences ~0 and ~1."
+  "Resolves pointers including escape sequences."
   (let ((example (json-parse-string "{
       \"foo\": [\"bar\", \"baz\"],
       \"\": 0,
@@ -116,11 +116,21 @@
       \" \": 7,
       \"m~n\": 8
    }")))
-    (should (equal (jsonp-resolve example "/m~0n") 8))
-    (should (equal (jsonp-resolve example "/a~1b") 1))))
+    (should (equal (jsonp-resolve example "")           example))
+    (should (equal (jsonp-resolve example "/foo")       ["bar" "baz"]))
+    (should (equal (jsonp-resolve example "/foo/0")     "bar"))
+    (should (equal (jsonp-resolve example "/")          0))
+    (should (equal (jsonp-resolve example "/a~1b")      1))
+    (should (equal (jsonp-resolve example "/c%d")       2))
+    (should (equal (jsonp-resolve example "/e^f")       3))
+    (should (equal (jsonp-resolve example "/g|h")       4))
+    (should (equal (jsonp-resolve example "/i\\j")      5))
+    (should (equal (jsonp-resolve example "/k\"l")      6))
+    (should (equal (jsonp-resolve example "/ ")         7))
+    (should (equal (jsonp-resolve example "/m~0n")      8))))
 
-(ert-deftest jsonp-resolve/test-json-escaping ()
-  "Resolves pointers including JSON escaped chars."
+(ert-deftest jsonp-resolve/test-uri-escaping ()
+  "Resolves pointers including escape sequences."
   (let ((example (json-parse-string "{
       \"foo\": [\"bar\", \"baz\"],
       \"\": 0,
@@ -133,5 +143,16 @@
       \" \": 7,
       \"m~n\": 8
    }")))
-    (should (equal (jsonp-resolve example "/k\"l") 6))
-    (should (equal (jsonp-resolve example "/i\\j") 5))))
+    (should (equal (jsonp-resolve example "#")            example))
+    (should (equal (jsonp-resolve example "#/foo")        ["bar" "baz"]))
+    (should (equal (jsonp-resolve example "#/foo/0")      "bar"))
+    (should (equal (jsonp-resolve example "#/")           0))
+    (should (equal (jsonp-resolve example "#/a~1b")       1))
+    (should (equal (jsonp-resolve example "#/c%25d")      2))
+    (should (equal (jsonp-resolve example "#/e%5Ef")      3))
+    (should (equal (jsonp-resolve example "#/g%7Ch")      4))
+    (should (equal (jsonp-resolve example "#/i%5Cj")      5))
+    (should (equal (jsonp-resolve example "#/k%22l")      6))
+    (should (equal (jsonp-resolve example "#/%20")        7))
+    (should (equal (jsonp-resolve example "#/m~0n")       8))
+))
