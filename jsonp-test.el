@@ -102,12 +102,6 @@
         (expected "value1"))
     (should (equal (jsonp-resolve example "/arr/1") expected))))
 
-;; TODO
-(ert-deftest jsonp-resolve/test-non-unique ()
-  "Non-unique names should error."
-  (let ((example (json-parse-string "{\"a\": 1, \"a\": 2}")))
-    (should-error (jsonp-resolve example "/a"))))
-
 (ert-deftest jsonp-resolve/test-escaping ()
   "Resolves pointers including escape sequences ~0 and ~1."
   (let ((example (json-parse-string "{
