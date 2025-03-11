@@ -1,5 +1,6 @@
 (require 'ert)
 (require 'jsonp)
+(require 'el-mock)
 
 (ert-deftest jsonp-resolve/test-nested-object ()
   "Resolves a value in a nested object structure."
@@ -165,8 +166,7 @@
     (should (equal (jsonp-resolve example "#/i%5Cj")      5))
     (should (equal (jsonp-resolve example "#/k%22l")      6))
     (should (equal (jsonp-resolve example "#/%20")        7))
-    (should (equal (jsonp-resolve example "#/m~0n")       8))
-))
+    (should (equal (jsonp-resolve example "#/m~0n")       8))))
 
 (ert-deftest jsonp/test-json-read-string-number-keys ()
   "Tests default behavior of `json-read-from-string'."
@@ -179,3 +179,57 @@
   (let ((result (json-parse-string "{ \"1\": \"a\", \"3\": \"b\" }")))
     (should (equal (type-of (car (car (map-pairs result))))
                    'string))))
+
+;;; jsonp-resolve-remote
+(ert-deftest jsonp-resolve-remote/test-absolute-uri ()
+  "Test resolving from an absolute URI."
+  (with-mock
+    (stub jsonp--url-retrieve => (json-read-from-string "{\"key\": \"value\"}"))
+    (let ((result (jsonp-resolve-remote "http://example.com/#/key")))
+      (should (equal result "value")))))
+
+(ert-deftest jsonp-resolve-remote/test-absolute-uri-with-custom-parser ()
+  "Test resolving from an absolute URI with a custom JSON parser."
+  (with-mock
+    (mock (jsonp--url-retrieve * 'json-read-from-string)
+          => (json-read-from-string "{\"key\": \"value\"}"))
+    (let ((result (jsonp-resolve-remote "http://example.com/#/key" nil nil 'json-read-from-string)))
+      (should (equal result "value")))))
+
+(ert-deftest jsonp-resolve-remote/test-absolute-uri-whitelist ()
+  "Test whitelisting an absolute URI."
+  (with-mock
+    (stub jsonp--url-retrieve => (json-read-from-string "{\"key\": \"value\"}"))
+    (let ((result (jsonp-resolve-remote "http://example.com/#/key" nil '("http://example\\.com/"))))
+      (should (equal result "value")))))
+
+(ert-deftest jsonp-resolve-remote/test-absolute-uri-whitelist-fail ()
+  "Test whitelisting an absolute URI that fails."
+  (should-error (jsonp-resolve-remote "http://example.com/#/key" nil '("https://example\\.com/"))))
+
+(ert-deftest jsonp-resolve-remote/test-relative-uri ()
+  "Test resolving from a relative URI with a base URI."
+  (with-mock
+    ;; assumes host ignores uri fragment
+    (mock (jsonp--url-retrieve "http://example.com/path/#/key" *)
+          => (json-read-from-string "{\"key\": \"value\"}"))
+    (let ((result (jsonp-resolve-remote "/path/#/key" "http://example.com")))
+      (should (equal result "value")))))
+
+(ert-deftest jsonp-resolve-remote/test-uri-trailing-slash ()
+  "Test resolving from a relative URI with trailing slash."
+    (with-mock
+      (mock (jsonp--url-retrieve "http://example.com/path/#/key" *) => (json-read-from-string "{\"key\": \"value\"}"))
+      (let ((result (jsonp-resolve-remote "/path/#/key" "http://example.com/")))
+        (should (equal result "value")))))
+
+(ert-deftest jsonp-resolve-remote/test-bare-fragment ()
+  "Resolving a fragment with no object or uri should error."
+    (should-error (jsonp-resolve-remote "#/key")))
+
+(ert-deftest jsonp-resolve-remote/test-pointer-uri-escaping ()
+  "Test pointers are properly unescaped before resolving."
+    (with-mock
+      (mock (jsonp--url-retrieve "http://example.com/#/foo%20bar" *) => (json-read-from-string "{\"foo bar\": \"value\"}"))
+      (let ((result (jsonp-resolve-remote "/#/foo%20bar" "http://example.com")))
+        (should (equal result "value")))))

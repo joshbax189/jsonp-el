@@ -129,11 +129,15 @@ Raises an error if the URI does not match any pattern.
 
 JSON-PARSE-FUNCTION, if provided, is the function to use for parsing
 the downloaded JSON (defaults to `json-read-from-string')."
+  (when base-uri
+    (setq base-uri (string-remove-suffix "/" base-uri)))
   (cond
-   ((string-match "^#" uri) ;; Path fragment URI
-    ;; TODO is this helpful?
-    (let ((object (error "Cannot resolve json pointers with only path fragments without OBJECT")))
-      (jsonp-resolve object (substring uri 1))))
+   ;; Path fragment URI
+   ;; TODO is this helpful?
+   ((and (or (null base-uri) (string-empty-p base-uri))
+         (string-match "^#" uri))
+    (error "Cannot resolve json pointers with only path fragments without OBJECT"))
+   ;; TODO cannot call with uri #/foo/bar and base-uri http://example.com/ -- correct?
    ((and base-uri (string-match "^/" uri)) ;; Relative URI with base URI
     (let ((absolute-uri (concat base-uri uri)))
       (jsonp-resolve-remote absolute-uri nil whitelist json-parse-function)))
@@ -144,7 +148,7 @@ the downloaded JSON (defaults to `json-read-from-string')."
         (error "URI not in whitelist: %s" uri)))
     (let* ((parsed-uri (url-generic-parse-url uri))
            (pointer (url-target parsed-uri))
-           ;; TODO check that any uri escaping is undone in pointer
+           (pointer (url-unhex-string pointer))
            (parse-fn (or json-parse-function 'json-read-from-string))
            ;; assume host will ignore fragment specifier here
            (json-object (jsonp--url-retrieve uri parse-fn)))
