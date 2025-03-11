@@ -77,14 +77,22 @@ PARTS is a list of tokens from the pointer."
       object
     (let ((part (jsonp--unescape-token (car parts))))
       (cond
-       ;; covers both props and numeric props
-       ;; NOTE According to spec this should error if there are duplicate keys in the object.
-       ;;      Due to the variety of ways JSON can be decoded in elisp, this is hard to enforce.
-       ((and (mapp object) (map-contains-key object part))
-        (jsonp-resolve-recursive (map-elt object part) (cdr parts)))
+       ;; NOTE According to spec this should error if there are
+       ;;      duplicate keys in the object.
+       ;;      Due to the variety of ways JSON can be decoded in
+       ;;      elisp, this is hard to enforce.
+       ((and (mapp object) (or (map-contains-key object part)
+                               (map-contains-key object (intern part))))
+        ;; covers props represented as a symbol or string
+        (let ((key (cond ((map-contains-key object part) part)
+                         ((map-contains-key object (intern part))
+                          (intern part))
+                         (t (error "Unreachable!")))))
+          (jsonp-resolve-recursive (map-elt object key) (cdr parts))))
        ((and (string-match "^[0-9]+$" part)
              (or (vectorp object)
-                 ;; careful, if arrays serialize to lists then you can't distinguish arrays and objects
+                 ;; careful, if arrays serialize to lists then you
+                 ;; can't distinguish arrays and objects
                  ;; e.g. [[0,1], 2]
                  (listp object)))
         (let ((index (string-to-number part)))

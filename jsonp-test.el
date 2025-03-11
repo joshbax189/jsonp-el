@@ -51,10 +51,22 @@
         (expected 20))
     (should (equal (jsonp-resolve example "/arr/1") expected))))
 
+(ert-deftest jsonp-resolve/test-strings-are-primitive ()
+  "Should not index inside a string."
+  (let ((example (json-parse-string "{\"arr\": \"foo\"}")))
+    ;; should not treat the string as an array
+    (should-error (jsonp-resolve example "/arr/0"))))
+
+(ert-deftest jsonp-resolve/test-strings-symbol-compare ()
+  "Should resolve when symbols are used in object."
+  (let ((example '((key . "value"))))
+    ;; should not treat the string as an array
+    (should (equal (jsonp-resolve example "/key") "value"))))
+
 (ert-deftest jsonp-resolve/test-out-of-bounds-index ()
-    "Returns nil when the index is out of bounds."
-    (let ((example (json-parse-string "{\"arr\": [10, 20, 30]}")))
-      (should-error (jsonp-resolve example "/arr/3"))))
+  "Returns nil when the index is out of bounds."
+  (let ((example (json-parse-string "{\"arr\": [10, 20, 30]}")))
+    (should-error (jsonp-resolve example "/arr/3"))))
 
 (ert-deftest jsonp-resolve/test-array-hyphen ()
     "Returns nil when the index is out of bounds."
@@ -74,7 +86,6 @@
         (expected "value"))
     (should (equal (jsonp-resolve example "/123") expected))))
 
-;; TODO json-read-from-string converts numeric keys into numbers!
 (ert-deftest jsonp-resolve/test-numeric-string-key-2 ()
   "Resolves a value using a numeric string as a key in an object."
   (let ((example (json-read-from-string "{\"123\": \"value\"}"))
@@ -156,3 +167,15 @@
     (should (equal (jsonp-resolve example "#/%20")        7))
     (should (equal (jsonp-resolve example "#/m~0n")       8))
 ))
+
+(ert-deftest jsonp/test-json-read-string-number-keys ()
+  "Tests default behavior of `json-read-from-string'."
+  (let ((result (json-read-from-string "{ \"1\": \"a\", \"3\": \"b\" }")))
+    (should (equal (type-of (car (car result)))
+                   'symbol))))
+
+(ert-deftest jsonp/test-json-parse-string-number-keys ()
+  "Tests default behavior of `json-parse-string'."
+  (let ((result (json-parse-string "{ \"1\": \"a\", \"3\": \"b\" }")))
+    (should (equal (type-of (car (car (map-pairs result))))
+                   'string))))
