@@ -103,48 +103,28 @@ Returns the value at the pointer or nil if not resolved."
       (jsonp-resolve object pointer)
     (error nil)))
 
-;; TODO two uses for this:
-;;      1. resolving a URI with no object, e.g. jsonp-open-uri
-;;      2. following a ref in a document
-
-(defun jsonp-resolve-remote (uri &optional base-uri whitelist json-parse-function)
+(defun jsonp-resolve-remote (uri &optional whitelist json-parse-function)
   "Resolve a JSON pointer from a URI.
 
-URI can be an absolute URI (downloads and parses JSON), a relative
-URI (expanded using BASE-URI), or a path fragment URI (delegates to
-`jsonp-resolve`).
-
-BASE-URI, if provided, is used to expand relative URIs.
+URI should be an absolute URI (downloads and parses JSON), then
+resolves any path fragment as a JSON pointer.
 
 WHITELIST, if provided, is a list of allowed URI patterns (regexp).
 Raises an error if the URI does not match any pattern.
 
 JSON-PARSE-FUNCTION, if provided, is the function to use for parsing
 the downloaded JSON (defaults to `json-read-from-string')."
-  (when base-uri
-    (setq base-uri (string-remove-suffix "/" base-uri)))
-  (cond
-   ;; Path fragment URI
-   ;; TODO is this helpful?
-   ((and (or (null base-uri) (string-empty-p base-uri))
-         (string-match "^#" uri))
-    (error "Cannot resolve json pointers with only path fragments without OBJECT"))
-   ;; TODO cannot call with uri #/foo/bar and base-uri http://example.com/ -- correct?
-   ((and base-uri (string-match "^/" uri)) ;; Relative URI with base URI
-    (let ((absolute-uri (concat base-uri uri)))
-      (jsonp-resolve-remote absolute-uri nil whitelist json-parse-function)))
-   (t ;; Absolute URI
-    (when whitelist
-      (unless (seq-some (lambda (pattern) (string-match pattern uri))
-                        whitelist)
-        (error "URI not in whitelist: %s" uri)))
-    (let* ((parsed-uri (url-generic-parse-url uri))
-           (pointer (url-target parsed-uri))
-           (pointer (url-unhex-string pointer))
-           (parse-fn (or json-parse-function 'json-read-from-string))
-           ;; assume host will ignore fragment specifier here
-           (json-object (jsonp--url-retrieve uri parse-fn)))
-      (jsonp-resolve json-object pointer)))))
+  (when whitelist
+    (unless (seq-some (lambda (pattern) (string-match pattern uri))
+                      whitelist)
+      (error "URI not in whitelist: %s" uri)))
+  (let* ((parsed-uri (url-generic-parse-url uri))
+         (pointer (url-target parsed-uri))
+         (pointer (url-unhex-string pointer))
+         (parse-fn (or json-parse-function 'json-read-from-string))
+         ;; assume host will ignore fragment specifier here
+         (json-object (jsonp--url-retrieve uri parse-fn)))
+    (jsonp-resolve json-object pointer)))
 
 (defun jsonp--url-retrieve (url json-parse-function)
   "Default fetch function.

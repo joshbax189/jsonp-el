@@ -214,35 +214,19 @@
   (with-mock
     (mock (jsonp--url-retrieve * 'json-read-from-string)
           => (json-read-from-string "{\"key\": \"value\"}"))
-    (let ((result (jsonp-resolve-remote "http://example.com/#/key" nil nil 'json-read-from-string)))
+    (let ((result (jsonp-resolve-remote "http://example.com/#/key" nil 'json-read-from-string)))
       (should (equal result "value")))))
 
 (ert-deftest jsonp-resolve-remote/test-absolute-uri-whitelist ()
   "Test whitelisting an absolute URI."
   (with-mock
     (stub jsonp--url-retrieve => (json-read-from-string "{\"key\": \"value\"}"))
-    (let ((result (jsonp-resolve-remote "http://example.com/#/key" nil '("http://example\\.com/"))))
+    (let ((result (jsonp-resolve-remote "http://example.com/#/key" '("http://example\\.com/"))))
       (should (equal result "value")))))
 
 (ert-deftest jsonp-resolve-remote/test-absolute-uri-whitelist-fail ()
   "Test whitelisting an absolute URI that fails."
-  (should-error (jsonp-resolve-remote "http://example.com/#/key" nil '("https://example\\.com/"))))
-
-(ert-deftest jsonp-resolve-remote/test-relative-uri ()
-  "Test resolving from a relative URI with a base URI."
-  (with-mock
-    ;; assumes host ignores uri fragment
-    (mock (jsonp--url-retrieve "http://example.com/path/#/key" *)
-          => (json-read-from-string "{\"key\": \"value\"}"))
-    (let ((result (jsonp-resolve-remote "/path/#/key" "http://example.com")))
-      (should (equal result "value")))))
-
-(ert-deftest jsonp-resolve-remote/test-uri-trailing-slash ()
-  "Test resolving from a relative URI with trailing slash."
-    (with-mock
-      (mock (jsonp--url-retrieve "http://example.com/path/#/key" *) => (json-read-from-string "{\"key\": \"value\"}"))
-      (let ((result (jsonp-resolve-remote "/path/#/key" "http://example.com/")))
-        (should (equal result "value")))))
+  (should-error (jsonp-resolve-remote "http://example.com/#/key" '("https://example\\.com/"))))
 
 (ert-deftest jsonp-resolve-remote/test-bare-fragment ()
   "Resolving a fragment with no object or uri should error."
@@ -252,5 +236,5 @@
   "Test pointers are properly unescaped before resolving."
     (with-mock
       (mock (jsonp--url-retrieve "http://example.com/#/foo%20bar" *) => (json-read-from-string "{\"foo bar\": \"value\"}"))
-      (let ((result (jsonp-resolve-remote "/#/foo%20bar" "http://example.com")))
+      (let ((result (jsonp-resolve-remote "http://example.com/#/foo%20bar")))
         (should (equal result "value")))))
