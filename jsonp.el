@@ -57,50 +57,42 @@ first decoded before further resolving."
       object
     (unless (string-prefix-p "/" pointer)
       (error "Malformed JSON pointer %s" pointer))
-    (let ((parts (split-string pointer "/")))
-      (if (string-equal (car parts) "") ; Remove leading empty string
-          (setq parts (cdr parts)))
-      (jsonp-resolve-recursive object parts))))
+    (let* ((parts (split-string pointer "/"))
+           (parts (if (string-equal (car parts) "") (cdr parts) parts)) ; Remove leading empty string
+           (current-object object))
+      (while (and parts current-object)
+        (let ((part (jsonp--unescape-token (car parts))))
+          (cond
+           ;; NOTE According to spec this should error if there are duplicate keys in the object.
+           ;;      Due to the variety of ways JSON can be decoded in elisp, this is hard to enforce.
+           ((and (mapp current-object) (or (map-contains-key current-object part)
+                                            (map-contains-key current-object (intern part))))
+            ;; covers props represented as a symbol, or string
+            (let ((key (cond ((map-contains-key current-object part) part)
+                             ((map-contains-key current-object (intern part)) (intern part))
+                             (t (error "Unreachable!")))))
+              (setq current-object (map-elt current-object key))))
+           ((and (string-match "^[0-9]+$" part)
+                 (or (vectorp current-object)
+                     ;; careful, if arrays serialize to lists then you can't distinguish arrays and objects
+                     ;; e.g. [[0,1], 2]
+                     (listp current-object)))
+            (let ((index (string-to-number part)))
+              (if (and (>= index 0) (< index (length current-object)))
+                  (setq current-object (seq-elt current-object index))
+                (error "JSON pointer index out of bounds: %s" part))))
+           (t
+            (error "JSON pointer key not found: %s" part)))
+          (setq parts (cdr parts))))
+      (if parts
+          (error "Could not resolve all parts of JSON pointer")
+        current-object))))
 
 (defun jsonp--unescape-token (token)
   "Replace the special sequences ~1 and ~0 in TOKEN string."
   (let* ((token-1 (string-replace "~1" "/" token))
          (token-2 (string-replace "~0" "~" token-1)))
     token-2))
-
-;; TODO convert to while, see swelter--resolve-json-ref
-(defun jsonp-resolve-recursive (object parts)
-  "Recursive helper function for `jsonp-resolve'.
-OBJECT is the parsed JSON object (e.g., the result of `json-read').
-PARTS is a list of tokens from the pointer."
-  (if (null parts)
-      object
-    (let ((part (jsonp--unescape-token (car parts))))
-      (cond
-       ;; NOTE According to spec this should error if there are
-       ;;      duplicate keys in the object.
-       ;;      Due to the variety of ways JSON can be decoded in
-       ;;      elisp, this is hard to enforce.
-       ((and (mapp object) (or (map-contains-key object part)
-                               (map-contains-key object (intern part))))
-        ;; covers props represented as a symbol or string
-        (let ((key (cond ((map-contains-key object part) part)
-                         ((map-contains-key object (intern part))
-                          (intern part))
-                         (t (error "Unreachable!")))))
-          (jsonp-resolve-recursive (map-elt object key) (cdr parts))))
-       ((and (string-match "^[0-9]+$" part)
-             (or (vectorp object)
-                 ;; careful, if arrays serialize to lists then you
-                 ;; can't distinguish arrays and objects
-                 ;; e.g. [[0,1], 2]
-                 (listp object)))
-        (let ((index (string-to-number part)))
-          (if (and (>= index 0) (< index (length object)))
-              (jsonp-resolve-recursive (seq-elt object index) (cdr parts))
-            (error "JSON pointer index out of bounds: %s" part))))
-       (t
-        (error "JSON pointer key not found: %s" part))))))
 
 (defun jsonp-resolve-safe (object pointer)
   "Resolve a JSON pointer, returning nil if it cannot be resolved.
