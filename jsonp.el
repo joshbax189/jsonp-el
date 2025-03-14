@@ -65,13 +65,12 @@ first decoded before further resolving."
           (cond
            ;; NOTE According to spec this should error if there are duplicate keys in the object.
            ;;      Due to the variety of ways JSON can be decoded in elisp, this is hard to enforce.
-           ((and (mapp current-object) (or (map-contains-key current-object part)
-                                            (map-contains-key current-object (intern part))))
-            ;; covers props represented as a symbol, or string
-            (let ((key (cond ((map-contains-key current-object part) part)
-                             ((map-contains-key current-object (intern part)) (intern part))
-                             (t (error "Unreachable!")))))
-              (setq current-object (map-elt current-object key))))
+           ((and (mapp current-object)
+                 ;; covers props represented as a symbol, or string
+                 (when-let* ((key (jsonp--map-contains-key current-object part)))
+                   (setq current-object (map-elt current-object key))
+                   t ;; in case the returned value is nil
+                   )))
            ((and (string-match "^[0-9]+$" part)
                  (or (vectorp current-object)
                      ;; careful, if arrays serialize to lists then you can't distinguish arrays and objects
@@ -87,6 +86,14 @@ first decoded before further resolving."
       (if parts
           (error "Could not resolve all parts of JSON pointer")
         current-object))))
+
+(defun jsonp--map-contains-key (obj key)
+  "Check if OBJ contains KEY either as a string or symbol.
+Returns the key as the correct type if present, nil otherwise."
+  (cond
+   ((map-contains-key obj key) key)
+   ((map-contains-key obj (intern key)) (intern key))
+   (t nil)))
 
 (defun jsonp--unescape-token (token)
   "Replace the special sequences ~1 and ~0 in TOKEN string."
