@@ -238,3 +238,56 @@
       (mock (jsonp--url-retrieve "http://example.com/#/foo%20bar" *) => (json-read-from-string "{\"foo bar\": \"value\"}"))
       (let ((result (jsonp-resolve-remote "http://example.com/#/foo%20bar")))
         (should (equal result "value")))))
+
+(ert-deftest jsonp-replace-refs/test ()
+  "Should work on petstore example."
+  (let ((json (json-parse-string "{
+  \"api_key\": {
+    \"$ref\": \"#/keys/foo\"
+  },
+  \"keys\": {
+    \"foo\": {
+      \"x\": 1,
+      \"y\": 2
+    }
+  }
+}" :object-type 'hash-table)))
+    (should (equal
+             (jsonp-replace-refs json)
+             '(("api_key" . (("x" . 1) ("y" . 2))) ("keys" . (("foo" . (("x" . 1) ("y" . 2))))))))))
+
+(ert-deftest jsonp-replace-refs/test-symbols ()
+  "Should replace $ref as a symbol too."
+  (let ((json (json-read-from-string "{
+  \"api_key\": {
+    \"$ref\": \"#/keys/foo\"
+  },
+  \"keys\": {
+    \"foo\": {
+      \"x\": 1,
+      \"y\": 2
+    }
+  }
+}")))
+    (should (equal
+             (jsonp-replace-refs json)
+             '((api_key . ((x . 1) (y . 2))) (keys . ((foo . ((x . 1) (y . 2))))))))))
+
+(ert-deftest jsonp-replace-refs/test-remote ()
+  "Should look up remote pointer."
+  (let ((json (json-parse-string "{
+  \"api_key\": {
+    \"$ref\": \"https://example.com/foo/bar/baz#/Bam\"
+  },
+  \"keys\": {
+    \"foo\": {
+      \"x\": 1,
+      \"y\": 2
+    }
+  }
+}" :object-type 'hash-table)))
+    (with-mock
+      (mock (jsonp--url-retrieve "https://example.com/foo/bar/baz#/Bam" *) => (json-read-from-string "{ \"Bam\": \"fizz\" }"))
+      (should (equal
+               (jsonp-replace-refs json json nil t)
+               '(("api_key" . "fizz") ("keys" . (("foo" . (("x" . 1) ("y" . 2)))))))))))

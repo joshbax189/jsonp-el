@@ -142,5 +142,46 @@ Fetch URL and call JSON-PARSE-FUNCTION with response body as a string."
     (forward-line)
     (funcall json-parse-function (buffer-substring (point) (point-max)))))
 
+(defun jsonp-replace-refs (json-obj &optional root-obj max-depth allow-remote)
+  "Given parsed JSON-OBJ expand any $ref.
+
+Fragments are resolved in ROOT-OBJ, remote URIs are only resolved
+if ALLOW-REMOTE is non-nil.
+MAX-DEPTH is the maximum recursion depth when expanding refs.
+Default is 10."
+  (setq root-obj (or root-obj json-obj)
+        max-depth (or max-depth 10))
+  ;; TODO this always returns an alist, so it will coerce different types of parsed objects
+  (map-apply
+   (lambda (key val)
+     (cond
+      ;; primitive values
+      ((or (not (mapp val))
+           (stringp val))
+       (cons key val))
+      ;; arrays
+      ((vectorp val)
+       ;; recurse and rebuild vector
+       (cons key (apply #'vector (map-values (jsonp-replace-refs val root-obj max-depth allow-remote)))))
+      ;; objects
+      ('t
+       (if-let* ((ref-key (jsonp--map-contains-key val "$ref"))
+                 (ref-string (map-elt val ref-key))
+                 (new-val (if (string-prefix-p "#" ref-string)
+                              (jsonp-resolve root-obj ref-string)
+                            ;; TODO might be relative urls too
+                            ;; TODO pass whitelist and json-parse-function
+                            (if allow-remote
+                                (jsonp-resolve-remote ref-string)
+                              (error "Bad JSON $ref %s" ref-string)))))
+           (if (or (not (mapp new-val))
+                   (stringp new-val))
+               ;; do not replace in strings
+               (cons key new-val)
+             (cons key (jsonp-replace-refs new-val root-obj (1- max-depth) allow-remote)))
+         ;; otherwise recurse into a regular object
+         (cons key (jsonp-replace-refs val root-obj max-depth allow-remote))))))
+   json-obj))
+
 (provide 'jsonp)
 ;;; jsonp.el ends here
