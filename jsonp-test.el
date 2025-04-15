@@ -1,7 +1,10 @@
+;;; -*- lexical-binding: t -*-
+
 (require 'ert)
 (require 'jsonp)
 (require 'el-mock)
 
+;;; jsonp-resolve
 (ert-deftest jsonp-resolve/test-nested-object ()
   "Resolves a value in a nested object structure."
   (let ((example (json-parse-string "{\"a\": {\"b\": [{\"c\": 1}, {\"c\": 2}]}, \"d\": \"value\"}"))
@@ -189,6 +192,7 @@
     (should (equal (jsonp-resolve example "#/%20")        7))
     (should (equal (jsonp-resolve example "#/m~0n")       8))))
 
+;;; Other
 (ert-deftest jsonp/test-json-read-string-number-keys ()
   "Tests default behavior of `json-read-from-string'."
   (let ((result (json-read-from-string "{ \"1\": \"a\", \"3\": \"b\" }")))
@@ -239,6 +243,7 @@
       (let ((result (jsonp-resolve-remote "http://example.com/#/foo%20bar")))
         (should (equal result "value")))))
 
+;;; jsonp-replace-refs
 (ert-deftest jsonp-replace-refs/test ()
   "Should work on petstore example."
   (let ((json (json-parse-string "{

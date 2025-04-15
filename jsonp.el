@@ -55,11 +55,12 @@ first decoded before further resolving."
   (if (or (not pointer)
           (string-equal pointer ""))
       object
-    (unless (string-prefix-p "/" pointer)
+    (if (string-prefix-p "/" pointer)
+        ;; Remove leading empty string
+        (setq pointer (string-remove-prefix "/" pointer))
       (error "Malformed JSON pointer %s" pointer))
-    (let* ((parts (split-string pointer "/"))
-           (parts (if (string-equal (car parts) "") (cdr parts) parts)) ; Remove leading empty string
-           (current-object object))
+    (let ((parts (split-string pointer "/"))
+          (current-object object))
       (while (and parts current-object)
         (let ((part (jsonp--unescape-token (car parts))))
           (cond
@@ -69,8 +70,8 @@ first decoded before further resolving."
                  ;; covers props represented as a symbol, or string
                  (when-let* ((key (jsonp--map-contains-key current-object part)))
                    (setq current-object (map-elt current-object key))
-                   t ;; in case the returned value is nil
-                   )))
+                   ;; return t in case the returned value is nil
+                   t )))
            ((and (string-match "^[0-9]+$" part)
                  (or (vectorp current-object)
                      ;; careful, if arrays serialize to lists then you can't distinguish arrays and objects
@@ -164,7 +165,7 @@ Default is 10."
        ;; recurse and rebuild vector
        (cons key (apply #'vector (map-values (jsonp-replace-refs val root-obj max-depth allow-remote)))))
       ;; objects
-      ('t
+      (t
        (if-let* ((ref-key (jsonp--map-contains-key val "$ref"))
                  (ref-string (map-elt val ref-key))
                  (new-val (if (string-prefix-p "#" ref-string)
