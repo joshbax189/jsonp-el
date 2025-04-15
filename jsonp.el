@@ -3,9 +3,9 @@
 ;; Author: Josh Bax
 ;; Maintainer: Josh Bax
 ;; Version: 0.0.1
-;; Package-Requires: (dependencies)
-;; Homepage: github.com/joshbax189/jsonp
-;; Keywords: programming
+;; Package-Requires: ((emacs "28.1"))
+;; Homepage: https://github.com/joshbax189/jsonp
+;; Keywords: comm, tools
 
 
 ;; This file is not part of GNU Emacs
