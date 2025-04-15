@@ -1,0 +1,44 @@
+* jsonp.el
+
+Resolve JSON pointers (as defined in [[https://datatracker.ietf.org/doc/html/rfc6901][RFC6901]]) locally and remotely in Emacs.
+
+This library provides functions to resolve JSON pointers within parsed JSON objects, supporting both local and remote resolution (fetching JSON from a URI). It also includes a function to replace JSON references (~$ref~).
+
+** Features
+
+- *Supports All JSON Encodings:* Resolve points in JSON encoded as alist, plist or hashmap.
+- *Local Resolution:* Resolve JSON pointers within Emacs lisp data structures representing parsed JSON.
+- *Remote Resolution:* Fetch and parse JSON from a URI and resolve a pointer within it.  URI fragments are handled automatically.
+- *Safe Resolution:* Resolve pointers without errors, returning ~nil~ if the pointer is invalid.
+- *Reference Replacement:* Expand ~$ref~ values within a JSON object, supporting local and optionally remote references.
+- *URL Fragment Decoding:* Handles URL fragments and percent-encoding correctly.
+
+** Usage
+
+#+begin_src emacs-lisp
+(require 'jsonp)
+
+;; Resolve a local JSON pointer
+(let ((json-object (json-read-from-string "{\"a\": {\"b\": 1}}"))
+      (pointer "/a/b"))
+  (jsonp-resolve json-object pointer)) ;; Returns 1
+
+;; Resolve a remote JSON pointer
+(jsonp-resolve-remote "https://example.com/data.json#/a/b")
+
+;; Resolve a JSON pointer safely
+(jsonp-resolve-safe json-object "/non/existent/path") ;; Returns nil
+
+;; Replace JSON references
+(let ((json-object (json-read-from-string "{\"a\": {\"$ref\": \"#/b\"}, \"b\": 1}")))
+  (jsonp-replace-refs json-object)) ;; Returns '((a . 1) (b . 1))
+#+end_src
+
+
+** Dependencies
+
+- Emacs 28.1 or later
+
+** Contributing
+
+Contributions are welcome!
