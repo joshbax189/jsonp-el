@@ -143,6 +143,62 @@ Fetch URL and call JSON-PARSE-FUNCTION with response body as a string."
     (forward-line)
     (funcall json-parse-function (buffer-substring (point) (point-max)))))
 
+(defun jsonp-nested-elt (json-obj keys &optional allow-remote)
+  "Get an element from JSON-OBJ traversing $refs and following KEYS.
+Unlike other functions, it returns nil if some key in KEYS fails to match.
+
+KEYS should be a list of string, symbol or number.  Strings will match symbol
+keys and vice-versa, but numbers must be used to index arrays.
+ALLOW-REMOTE if non-nil will resolve $ref by downloading URIs."
+  (let ((root-obj json-obj)
+        val)
+
+    (cl-block nil
+      ;; edge cases
+      (unless keys
+        (cl-return json-obj))
+
+      (if (or (not (mapp json-obj))
+              (stringp json-obj))
+          (cl-return nil))
+
+      (while keys
+        (let* ((key (car keys))
+               (key (if (numberp key)
+                        key
+                      (jsonp--map-contains-key json-obj key))))
+          (setq keys (cdr keys)
+                val (map-elt json-obj key))
+          (cond
+           ;; primitive values
+           ((or (not (mapp val))
+                (stringp val))
+            (if keys
+                (cl-return nil)
+              (cl-return val)))
+           ;; arrays
+           ((vectorp val)
+            ;; recurse
+            (setq json-obj val))
+           ;; objects
+           (t
+            (if-let* ((ref-key (jsonp--map-contains-key val "$ref"))
+                      (ref-string (map-elt val ref-key))
+                      (new-val (if (string-prefix-p "#" ref-string)
+                                   (jsonp-resolve root-obj ref-string)
+                                 ;; TODO might be relative urls too, should provide a base-uri?
+                                 ;; TODO pass whitelist and json-parse-function
+                                 (if allow-remote
+                                     (jsonp-resolve-remote ref-string)
+                                   (cl-return nil)))))
+                (setq json-obj new-val)
+              ;; otherwise recurse into a regular object
+              (setq json-obj val))))))
+      (if keys
+          (cl-return nil)
+        (cl-return val)))))
+
+;; NOTE: json-schema explicitly disallows $refs from referring to other $refs
 (defun jsonp-replace-refs (json-obj &optional root-obj max-depth allow-remote)
   "Given parsed JSON-OBJ expand any $ref.
 

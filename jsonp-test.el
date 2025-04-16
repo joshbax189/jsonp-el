@@ -296,3 +296,46 @@
       (should (equal
                (jsonp-replace-refs json json nil t)
                '(("api_key" . "fizz") ("keys" . (("foo" . (("x" . 1) ("y" . 2)))))))))))
+
+;;; jsonp-nested-elt
+(ert-deftest jsonp-nested-elt/test ()
+  "Should traverse a local $ref."
+  (let ((json (json-parse-string "{
+  \"api_key\": {
+    \"$ref\": \"#/keys/foo\"
+  },
+  \"keys\": {
+    \"foo\": {
+      \"x\": { \"$ref\": \"#/keys/foo/y\" },
+      \"y\": 2
+    }
+  }
+}" :object-type 'alist)))
+    ;; TODO hmm what should happen here?
+    ;; (should (equal
+    ;;          (jsonp-nested-elt json '(keys foo x))
+    ;;          2))
+    (should (equal
+             (jsonp-nested-elt json '("keys" "foo" "y"))
+             2))
+    (should (equal
+             (jsonp-nested-elt json '(api_key y))
+             2))))
+
+(ert-deftest jsonp-nested-elt/primitives ()
+  "Should match `map-elt' behavior."
+  (should (equal
+           (jsonp-nested-elt nil '("keys" "foo" "y"))
+           nil))
+  (should (equal
+           (jsonp-nested-elt 1 '("keys" "foo" "y"))
+           nil))
+  (should (equal
+           (jsonp-nested-elt '((a . 1)) nil)
+           '((a . 1))))
+  (should (equal
+           (jsonp-nested-elt "foobar" '(1))
+           nil))
+  (should (equal
+           (jsonp-nested-elt (vector 'a 'b) (list 1))
+           'b)))
