@@ -261,6 +261,61 @@
              (jsonp-replace-refs json)
              '(("api_key" . (("x" . 1) ("y" . 2))) ("keys" . (("foo" . (("x" . 1) ("y" . 2))))))))))
 
+(ert-deftest jsonp-replace-refs/test-max-depth-0 ()
+  "Should not replace any $ref when max-depth is 0."
+  (let ((json (json-parse-string "{
+  \"api_key\": {
+    \"$ref\": \"#/keys/foo\"
+  },
+  \"keys\": {
+    \"foo\": {
+      \"x\": 1,
+      \"y\": 2
+    }
+  }
+}" :object-type 'hash-table)))
+    (should (equal
+             (jsonp-replace-refs json nil 0)
+             json))))
+
+(ert-deftest jsonp-replace-refs/test-max-depth-1 ()
+  "Should not replace any $ref beyond limit."
+  (let ((json (json-parse-string "{
+  \"api_key\": {
+    \"$ref\": \"#/keys/foo\"
+  },
+  \"keys\": {
+    \"foo\": {
+      \"x\": { \"$ref\": \"#/keys/foo/y\" },
+      \"y\": 2
+    }
+  }
+}" :object-type 'alist)))
+    (message "%S" json)
+    (should (equal
+             (jsonp-replace-refs json nil 1)
+             ;; TODO not quite right
+             ;; replacement should not depend on key order...
+             '((api_key (x ($ref . "#/keys/foo/y")) (y . 2)) (keys (foo (x . 2) (y . 2))))))))
+
+(ert-deftest jsonp-replace-refs/test-max-depth-2 ()
+  "Should not replace any $ref beyond limit."
+  (let ((json (json-parse-string "{
+  \"api_key\": {
+    \"$ref\": \"#/keys/foo\"
+  },
+  \"keys\": {
+    \"foo\": {
+      \"x\": { \"$ref\": \"#/keys/foo/y\" },
+      \"y\": 2
+    }
+  }
+}" :object-type 'alist)))
+    (message "%S" json)
+    (should (equal
+             (jsonp-replace-refs json nil 2)
+             '((api_key (x . 2) (y . 2)) (keys (foo (x . 2) (y . 2))))))))
+
 (ert-deftest jsonp-replace-refs/test-symbols ()
   "Should replace $ref as a symbol too."
   (let ((json (json-read-from-string "{
