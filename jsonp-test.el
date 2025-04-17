@@ -297,6 +297,25 @@
                (jsonp-replace-refs json json nil t)
                '(("api_key" . "fizz") ("keys" . (("foo" . (("x" . 1) ("y" . 2)))))))))))
 
+(ert-deftest jsonp-replace-refs/test-remote-relative-uri ()
+  "Should look up remote pointer when using a relative URI."
+  (let ((json (json-parse-string "{
+  \"api_key\": {
+    \"$ref\": \"./foo/bar/baz#/Bam\"
+  },
+  \"keys\": {
+    \"foo\": {
+      \"x\": 1,
+      \"y\": 2
+    }
+  }
+}" :object-type 'hash-table)))
+    (with-mock
+      (mock (jsonp--url-retrieve "https://example.com/foo/bar/baz#/Bam" *) => (json-read-from-string "{ \"Bam\": \"fizz\" }"))
+      (should (equal
+               (jsonp-replace-refs json json nil t "https://example.com")
+               '(("api_key" . "fizz") ("keys" . (("foo" . (("x" . 1) ("y" . 2)))))))))))
+
 ;;; jsonp-nested-elt
 (ert-deftest jsonp-nested-elt/test ()
   "Should traverse a local $ref."

@@ -154,7 +154,15 @@ WHITELIST, if provided, is a list of allowed URI patterns (regexp).
 Raises an error if the URI does not match any pattern.
 
 JSON-PARSE-FUNCTION, if provided, is the function to use for parsing
-the downloaded JSON (defaults to `json-read-from-string')."
+the downloaded JSON (defaults to `json-read-from-string').
+
+BASE-URI is used to resolve URI if it is relative.
+See `jsonp-expand-relative-uri' for details."
+  (when (not (string-prefix-p "http" uri))
+    (if (and base-uri (string-prefix-p "http" base-uri))
+        (setq uri (jsonp-expand-relative-uri uri base-uri))
+      (error "URI must use HTTP or HTTPS: %s" uri)))
+
   (when whitelist
     (unless (seq-some (lambda (pattern) (string-match pattern uri))
                       whitelist)
@@ -176,7 +184,7 @@ Fetch URL and call JSON-PARSE-FUNCTION with response body as a string."
     (forward-line)
     (funcall json-parse-function (buffer-substring (point) (point-max)))))
 
-(defun jsonp-nested-elt (json-obj keys &optional allow-remote)
+(defun jsonp-nested-elt (json-obj keys &optional allow-remote base-uri)
   "Get an element from JSON-OBJ traversing $refs and following KEYS.
 Unlike other functions, it returns nil if some key in KEYS fails to match.
 
@@ -219,10 +227,9 @@ ALLOW-REMOTE if non-nil will resolve $ref by downloading URIs."
                       (ref-string (map-elt val ref-key))
                       (new-val (if (string-prefix-p "#" ref-string)
                                    (jsonp-resolve root-obj ref-string)
-                                 ;; TODO might be relative urls too, should provide a base-uri?
                                  ;; TODO pass whitelist and json-parse-function
                                  (if allow-remote
-                                     (jsonp-resolve-remote ref-string)
+                                     (jsonp-resolve-remote ref-string nil nil base-uri)
                                    (cl-return nil)))))
                 (setq json-obj new-val)
               ;; otherwise recurse into a regular object
@@ -232,7 +239,7 @@ ALLOW-REMOTE if non-nil will resolve $ref by downloading URIs."
         (cl-return val)))))
 
 ;; NOTE: json-schema explicitly disallows $refs from referring to other $refs
-(defun jsonp-replace-refs (json-obj &optional root-obj max-depth allow-remote)
+(defun jsonp-replace-refs (json-obj &optional root-obj max-depth allow-remote base-uri)
   "Given parsed JSON-OBJ expand any $ref.
 
 Fragments are resolved in ROOT-OBJ, remote URIs are only resolved
@@ -259,10 +266,9 @@ Default is 10."
                  (ref-string (map-elt val ref-key))
                  (new-val (if (string-prefix-p "#" ref-string)
                               (jsonp-resolve root-obj ref-string)
-                            ;; TODO might be relative urls too
                             ;; TODO pass whitelist and json-parse-function
                             (if allow-remote
-                                (jsonp-resolve-remote ref-string)
+                                (jsonp-resolve-remote ref-string base-uri)
                               (error "Bad JSON $ref %s" ref-string)))))
            (if (or (not (mapp new-val))
                    (stringp new-val))
