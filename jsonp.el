@@ -111,7 +111,40 @@ Returns the value at the pointer or nil if not resolved."
       (jsonp-resolve object pointer)
     (error nil)))
 
-(defun jsonp-resolve-remote (uri &optional whitelist json-parse-function)
+(defun jsonp-expand-relative-uri (uri base-uri)
+  "Expands URI relative to BASE-URI, removing any dot components.
+Assumes no query component in either URI.
+
+For example
+  (jsonp-expand-relative-uri
+    \"../foo/bar#baz\"
+    \"https://example.com/something\")
+yields
+  \"https://example.com/foo/bar#baz\""
+  (let* ((base-parsed (url-generic-parse-url base-uri))
+         (uri-parsed (url-generic-parse-url uri))
+         (joined-paths (concat (url-filename base-parsed) "/" (url-filename uri-parsed)))
+         (path-segments (split-string joined-paths "/"))
+         (path-result nil))
+    (when (cdr (url-path-and-query base-parsed))
+      (error "Cannot merge URIs with query %s" base-uri))
+    (when (cdr (url-path-and-query uri-parsed))
+      (error "Cannot merge URIs with query %s" uri))
+    ;; merge dot paths
+    (while path-segments
+      (let ((next (car path-segments)))
+        (setq path-segments (cdr path-segments))
+        (pcase next
+          ((or "" "."))
+          (".." (setq path-result (cdr path-result)))
+          (_ (push next path-result)))))
+    (setq path-result (concat "/" (string-join (reverse path-result) "/")))
+
+    (setf (url-filename base-parsed) path-result
+          (url-target base-parsed) (url-target uri-parsed))
+    (url-recreate-url base-parsed)))
+
+(defun jsonp-resolve-remote (uri &optional whitelist json-parse-function base-uri)
   "Resolve a JSON pointer from a URI.
 
 URI should be an absolute URI (downloads and parses JSON), then
