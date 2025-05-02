@@ -192,6 +192,12 @@
     (should (equal (jsonp-resolve example "#/%20")        7))
     (should (equal (jsonp-resolve example "#/m~0n")       8))))
 
+(ert-deftest jsonp-resolve/test-plist ()
+  "Resolves a value in a nested object structure when parsed to a plist."
+  (let ((example (json-parse-string "{\"a\": {\"b\": [{\"c\": 1}, {\"c\": 2}]}, \"d\": \"value\"}" :object-type 'plist))
+        (expected 1))
+    (should (equal (jsonp-resolve example "/a/b/0/c") expected))))
+
 ;;; Other
 (ert-deftest jsonp/test-json-read-string-number-keys ()
   "Tests default behavior of `json-read-from-string'."
@@ -416,3 +422,11 @@
   (should (equal
            (jsonp-nested-elt (vector 'a 'b) (list 1))
            'b)))
+
+;;; jsonp--map-contains-key
+(ert-deftest jsonp--map-contains-key/test-plists ()
+  "Tests key naming in plists."
+  (let ((test-val (json-parse-string "{ \"$ref\": 123 }" :object-type 'plist)))
+    (should (jsonp--map-contains-key test-val "$ref"))))
+
+;; jsonp-test.el ends here

@@ -96,6 +96,7 @@ Returns the key as the correct type if present, nil otherwise."
   (cond
    ((map-contains-key obj key) key)
    ((map-contains-key obj (intern key)) (intern key))
+   ((map-contains-key obj (intern (concat ":" key))) (intern (concat ":" key)))
    (t nil)))
 
 (defun jsonp--unescape-token (token)
