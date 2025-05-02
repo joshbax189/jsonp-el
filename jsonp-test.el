@@ -254,7 +254,7 @@
 
 ;;; jsonp-replace-refs
 (ert-deftest jsonp-replace-refs/test ()
-  "Should work on petstore example."
+  "Should expand a single $ref."
   (let ((json (json-parse-string "{
   \"api_key\": {
     \"$ref\": \"#/keys/foo\"
@@ -265,10 +265,51 @@
       \"y\": 2
     }
   }
-}" :object-type 'hash-table)))
+}" :object-type 'alist)))
     (should (equal
              (jsonp-replace-refs json)
-             '(("api_key" . (("x" . 1) ("y" . 2))) ("keys" . (("foo" . (("x" . 1) ("y" . 2))))))))))
+             '((api_key . ((x . 1) (y . 2))) (keys . ((foo . ((x . 1) (y . 2))))))))))
+
+(ert-deftest jsonp-replace-refs/test-unchanged ()
+  "Should return an identical object when no $refs present."
+  (let ((json (json-parse-string "{\"a\": {\"b\": [{\"c\": 1}, {\"c\": 2}]}, \"d\": \"value\"}"
+                                 :object-type 'plist)))
+    (should (equal
+             (jsonp-replace-refs json)
+             (json-parse-string "{\"a\": {\"b\": [{\"c\": 1}, {\"c\": 2}]}, \"d\": \"value\"}"
+                                :object-type 'plist)))))
+
+(ert-deftest jsonp-replace-refs/test-array ()
+  "Should replace in an array."
+  (let ((json (json-parse-string "{\"a\": [{ \"$ref\": \"#/keys/foo\" }], \"keys\": { \"foo\": 1 }}"
+                                 :object-type 'alist)))
+    (should (equal
+             (jsonp-replace-refs json)
+             (json-parse-string "{\"a\": [1], \"keys\": { \"foo\": 1 }}"
+                                :object-type 'alist)))))
+
+(ert-deftest jsonp-replace-refs/test-hash-table ()
+  "Should preserve hash table type objects when replacing."
+  (let* ((json (json-parse-string "{
+  \"api_key\": {
+    \"$ref\": \"#/keys/foo\"
+  },
+  \"keys\": {
+    \"foo\": {
+      \"x\": 1,
+      \"y\": 2
+    }
+  }
+}" :object-type 'hash-table))
+         (result (jsonp-replace-refs json)))
+    ;; result is a hash table
+    (should (hash-table-p result))
+    ;; nested objects are hash tables
+    (should (hash-table-p (gethash "keys" result)))
+    ;; $ref is replaced
+    (should (equal
+             (map-keys (gethash "api_key" result))
+             '("x" "y")))))
 
 (ert-deftest jsonp-replace-refs/test-max-depth-0 ()
   "Should not replace any $ref when max-depth is 0."
@@ -300,12 +341,9 @@
     }
   }
 }" :object-type 'alist)))
-    (message "%S" json)
     (should (equal
              (jsonp-replace-refs json nil 1)
-             ;; TODO not quite right
-             ;; replacement should not depend on key order...
-             '((api_key (x ($ref . "#/keys/foo/y")) (y . 2)) (keys (foo (x . 2) (y . 2))))))))
+             '((api_key (x . 2) (y . 2)) (keys (foo (x . 2) (y . 2))))))))
 
 (ert-deftest jsonp-replace-refs/test-max-depth-2 ()
   "Should not replace any $ref beyond limit."
@@ -320,7 +358,6 @@
     }
   }
 }" :object-type 'alist)))
-    (message "%S" json)
     (should (equal
              (jsonp-replace-refs json nil 2)
              '((api_key (x . 2) (y . 2)) (keys (foo (x . 2) (y . 2))))))))
@@ -354,12 +391,12 @@
       \"y\": 2
     }
   }
-}" :object-type 'hash-table)))
+}" :object-type 'alist)))
     (with-mock
       (mock (jsonp--url-retrieve-default "https://example.com/foo/bar/baz#/Bam") => "{ \"Bam\": \"fizz\" }")
       (should (equal
                (jsonp-replace-refs json json nil jsonp-remote-default)
-               '(("api_key" . "fizz") ("keys" . (("foo" . (("x" . 1) ("y" . 2)))))))))))
+               '((api_key . "fizz") (keys . ((foo . ((x . 1) (y . 2)))))))))))
 
 (ert-deftest jsonp-replace-refs/test-remote-relative-uri ()
   "Should look up remote pointer when using a relative URI."
@@ -373,12 +410,12 @@
       \"y\": 2
     }
   }
-}" :object-type 'hash-table)))
+}" :object-type 'alist)))
     (with-mock
       (mock (jsonp--url-retrieve-default "https://example.com/foo/bar/baz#/Bam") => "{ \"Bam\": \"fizz\" }")
       (should (equal
                (jsonp-replace-refs json json nil jsonp-remote-default "https://example.com")
-               '(("api_key" . "fizz") ("keys" . (("foo" . (("x" . 1) ("y" . 2)))))))))))
+               '((api_key . "fizz") (keys . ((foo . ((x . 1) (y . 2)))))))))))
 
 ;;; jsonp-nested-elt
 (ert-deftest jsonp-nested-elt/test ()

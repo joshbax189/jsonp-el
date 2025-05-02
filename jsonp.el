@@ -269,48 +269,90 @@ See `jsonp-expand-relative-uri' for details."
           (cl-return nil)
         (cl-return val)))))
 
+(defun jsonp--primitive-p (json-obj)
+  "Non-nil if JSON-OBJ is a parsed boolean, string, number or null.
+
+Note that `json-read-from-string' parses both the empty object and
+the null literal as nil, so in that case empty objects will be treated
+as primitive."
+  (cond
+   ((stringp json-obj) t)
+   ((numberp json-obj) t)
+   ((null json-obj) t)
+   ((eq t json-obj) t)
+   ;; boolean special symbols
+   ((eq :json-false json-obj) t)
+   ((eq :false json-obj) t)
+   ;; literal null used by json-parse-string
+   ((eq :null json-obj) t)))
+
+(defun jsonp--array-p (json-obj)
+  "Non-nil if JSON-OBJ is a parsed array.
+
+If arrays are parsed as lists then empty arrays and objects may be
+indistinguishable.  Therefore this returns nil when json-obj is nil."
+  (cond
+   ;; default for both json-parse-string and json-read-from-string
+   ((vectorp json-obj) t)
+   ;; when parsed as a list
+   ((and (listp json-obj)
+         ;; don't know in empty case
+         (not (null json-obj))
+         ;; it should not be a plist, and
+         (not (plistp json-obj))
+         ;; it should not be an alist:
+         ;; either the car is not a list
+         (or (not (listp (car json-obj)))
+             ;; or e.g. [{a: 1}] => (((a . 1)))
+             ;; double car is not a symbol or string
+             (not (symbolp (car (car json-obj))))))
+    t)))
+
 ;; NOTE: json-schema explicitly disallows $refs from referring to other $refs
 (defun jsonp-replace-refs (json-obj &optional root-obj max-depth remote base-uri)
-  "Given parsed JSON-OBJ expand any $ref.
+  "Given parsed JSON-OBJ expand any $ref modifying JSON-OBJ in place.
 
 Fragments are resolved in ROOT-OBJ, remote URIs are only resolved
 if REMOTE is an instance of `jsonp-remote'.
+
 MAX-DEPTH is the maximum recursion depth when expanding refs.
 Default is 10."
   (setq root-obj (or root-obj json-obj)
         max-depth (or max-depth 10))
-  ;; TODO this always returns an alist, so it will coerce different types of parsed objects
-  (if (<= max-depth 0)
-      (prog1 json-obj
-        (warn "Recursion limit reached when expanding.  Some $refs may not be expanded."))
-    (map-apply
-     (lambda (key val)
-       (cond
-        ;; primitive values
-        ((or (not (mapp val))
-             (stringp val))
-         (cons key val))
-        ;; arrays
-        ((vectorp val)
-         ;; recurse and rebuild vector
-         (cons key (apply #'vector (map-values (jsonp-replace-refs val root-obj max-depth remote)))))
-        ;; objects
-        (t
-         (if-let* ((ref-key (jsonp--map-contains-key val "$ref"))
-                   (ref-string (map-elt val ref-key))
-                   (new-val (if (string-prefix-p "#" ref-string)
-                                (jsonp-resolve root-obj ref-string)
-                              (if remote
-                                  (jsonp-resolve-remote remote ref-string base-uri)
-                                (error "Bad JSON $ref %s" ref-string)))))
-             (if (or (not (mapp new-val))
-                     (stringp new-val))
-                 ;; do not replace in strings
-                 (cons key new-val)
-               (cons key (jsonp-replace-refs new-val root-obj (1- max-depth) remote)))
-           ;; otherwise recurse into a regular object
-           (cons key (jsonp-replace-refs val root-obj max-depth remote))))))
-     json-obj)))
+  (cond
+   ((<= max-depth 0)
+    (warn "Recursion limit reached when expanding.  Some $refs may not be expanded.")
+    json-obj)
+   ((jsonp--primitive-p json-obj)
+    json-obj)
+   (t
+    (dolist (keyval (map-pairs json-obj))
+      (let ((key (car keyval))
+            (val (cdr keyval)))
+        (cond
+         ;; ignore primitive values
+         ((jsonp--primitive-p val)
+          nil)
+         ((jsonp--array-p val)
+          ;; recurse and rebuild vector
+          (let ((updated (jsonp-replace-refs val root-obj max-depth remote)))
+            (map-put! json-obj key updated)))
+         (t
+          (if-let* ((ref-key (jsonp--map-contains-key val "$ref"))
+                    (ref-string (map-elt val ref-key))
+                    (new-val (if (string-prefix-p "#" ref-string)
+                                 (jsonp-resolve root-obj ref-string)
+                               (if remote
+                                   (jsonp-resolve-remote remote ref-string base-uri)
+                                 (error "Bad JSON $ref %s" ref-string)))))
+              (if (jsonp--primitive-p new-val)
+                  ;; do not replace in strings
+                  (map-put! json-obj key new-val)
+                (map-put! json-obj key (jsonp-replace-refs new-val root-obj (1- max-depth) remote)))
+            ;; otherwise recurse into a regular object
+            (map-put! json-obj key (jsonp-replace-refs val root-obj max-depth remote)))))))
+    ;; return possibly modified object
+    json-obj)))
 
 (provide 'jsonp)
 ;;; jsonp.el ends here
