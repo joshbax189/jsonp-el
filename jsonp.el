@@ -196,12 +196,14 @@ See `jsonp-expand-relative-uri' for details."
          (json-object (jsonp--url-retrieve remote uri)))
     (jsonp-resolve json-object pointer)))
 
-;; TODO add a cache, or use built-in url-retrieve cache?
+;; NOTE there appears to be a bug in the url-retrieve cache
 (defun jsonp--url-retrieve-default (url)
   "Default JSONP fetch function based on `url-retrieve-synchronously'.
 Fetches URL and returns response body as a string."
   (with-current-buffer (url-retrieve-synchronously url t)
     (goto-char (point-min))
+    (unless (re-search-forward "^Content-Type: application/json$" nil t)
+      (error "Expected HTTP response Content-Type to be application/json"))
     (while (looking-at "^.") (forward-line))
     (forward-line)
     (prog1 (buffer-substring (point) (point-max))
