@@ -431,10 +431,9 @@
     }
   }
 }" :object-type 'alist)))
-    ;; TODO hmm what should happen here?
-    ;; (should (equal
-    ;;          (jsonp-nested-elt json '(keys foo x))
-    ;;          2))
+    (should (equal
+             (jsonp-nested-elt json '(keys foo x))
+             '(($ref . "#/keys/foo/y"))))
     (should (equal
              (jsonp-nested-elt json '("keys" "foo" "y"))
              2))
@@ -442,23 +441,24 @@
              (jsonp-nested-elt json '(api_key y))
              2))))
 
-(ert-deftest jsonp-nested-elt/primitives ()
-  "Should match `map-elt' behavior."
-  (should (equal
-           (jsonp-nested-elt nil '("keys" "foo" "y"))
-           nil))
-  (should (equal
-           (jsonp-nested-elt 1 '("keys" "foo" "y"))
-           nil))
+(ert-deftest jsonp-nested-elt/primitive-errors ()
+  "Should error when indexing primitive values."
+  (should-error (jsonp-nested-elt nil '("keys" "foo" "y")))
+  (should-error (jsonp-nested-elt 1 '("keys" "foo" "y")))
+  ;; no indexing in a string
+  (should-error (jsonp-nested-elt "foobar" '(1))))
+
+(ert-deftest jsonp-nested-elt/empty-keys ()
+  "With no keys return the root object."
   (should (equal
            (jsonp-nested-elt '((a . 1)) nil)
-           '((a . 1))))
+           '((a . 1)))))
+
+(ert-deftest jsonp-nested-elt/arrays ()
+  "Indexing an array."
   (should (equal
-           (jsonp-nested-elt "foobar" '(1))
-           nil))
-  (should (equal
-           (jsonp-nested-elt (vector 'a 'b) (list 1))
-           'b)))
+           (jsonp-nested-elt (vector "a" "b") (list 1))
+           "b")))
 
 ;;; jsonp--map-contains-key
 (ert-deftest jsonp--map-contains-key/test-plists ()

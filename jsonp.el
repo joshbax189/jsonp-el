@@ -212,7 +212,8 @@ Fetches URL and returns response body as a string."
 
 (defun jsonp-nested-elt (json-obj keys &optional remote base-uri)
   "Get an element from JSON-OBJ traversing $refs and following KEYS.
-Unlike other functions, it returns nil if some key in KEYS fails to match.
+If some key in KEYS fails to match, an error is signalled.
+Note that $refs are not replaced in the result.
 
 KEYS should be a list of string, symbol or number.  Strings will match symbol
 keys and vice-versa, but numbers must be used to index arrays.
@@ -230,9 +231,8 @@ See `jsonp-expand-relative-uri' for details."
       (unless keys
         (cl-return json-obj))
 
-      (if (or (not (mapp json-obj))
-              (stringp json-obj))
-          (cl-return nil))
+      (when (jsonp--primitive-p json-obj)
+        (error "JSONP resolution error: cannot index primitive value"))
 
       (while keys
         (let* ((key (car keys))
@@ -242,14 +242,11 @@ See `jsonp-expand-relative-uri' for details."
           (setq keys (cdr keys)
                 val (map-elt json-obj key))
           (cond
-           ;; primitive values
-           ((or (not (mapp val))
-                (stringp val))
+           ((jsonp--primitive-p val)
             (if keys
-                (cl-return nil)
+                (error "JSONP resolution error: cannot index primitive value")
               (cl-return val)))
-           ;; arrays
-           ((vectorp val)
+           ((jsonp--array-p val)
             ;; recurse
             (setq json-obj val))
            ;; objects
@@ -260,14 +257,11 @@ See `jsonp-expand-relative-uri' for details."
                                    (jsonp-resolve root-obj ref-string)
                                  (if remote
                                      (jsonp-resolve-remote remote ref-string base-uri)
-                                   (cl-return nil)))))
+                                   (error "JSONP remote error: remote resolution disabled")))))
                 (setq json-obj new-val)
               ;; otherwise recurse into a regular object
               (setq json-obj val))))))
-      ;; TODO what if the result is itself a { $ref }
-      (if keys
-          (cl-return nil)
-        (cl-return val)))))
+      (cl-return val))))
 
 (defun jsonp--primitive-p (json-obj)
   "Non-nil if JSON-OBJ is a parsed boolean, string, number or null.
