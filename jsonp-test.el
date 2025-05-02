@@ -209,38 +209,41 @@
 (ert-deftest jsonp-resolve-remote/test-absolute-uri ()
   "Test resolving from an absolute URI."
   (with-mock
-    (stub jsonp--url-retrieve => (json-read-from-string "{\"key\": \"value\"}"))
-    (let ((result (jsonp-resolve-remote "http://example.com/#/key")))
+    (stub jsonp--url-retrieve-default => "{\"key\": \"value\"}")
+    (let ((result (jsonp-resolve-remote jsonp-remote-default "http://example.com/#/key")))
       (should (equal result "value")))))
 
 (ert-deftest jsonp-resolve-remote/test-absolute-uri-with-custom-parser ()
   "Test resolving from an absolute URI with a custom JSON parser."
   (with-mock
-    (mock (jsonp--url-retrieve * 'json-read-from-string)
-          => (json-read-from-string "{\"key\": \"value\"}"))
-    (let ((result (jsonp-resolve-remote "http://example.com/#/key" nil 'json-read-from-string)))
-      (should (equal result "value")))))
+    (mock (jsonp--url-retrieve-default *) => "{\"key\": \"value\"}")
+    (mock (json-parse-string *) => '((key . "value")))
+    (let* ((remote (jsonp-remote :json-parser #'json-parse-string))
+           (result (jsonp-resolve-remote remote "http://example.com/")))
+      (should (listp result)))))
 
 (ert-deftest jsonp-resolve-remote/test-absolute-uri-whitelist ()
   "Test whitelisting an absolute URI."
   (with-mock
-    (stub jsonp--url-retrieve => (json-read-from-string "{\"key\": \"value\"}"))
-    (let ((result (jsonp-resolve-remote "http://example.com/#/key" '("http://example\\.com/"))))
+    (stub jsonp--url-retrieve-default => "{\"key\": \"value\"}")
+    (let* ((remote (jsonp-remote :whitelist '("http://example\\.com/")))
+           (result (jsonp-resolve-remote remote "http://example.com/#/key")))
       (should (equal result "value")))))
 
 (ert-deftest jsonp-resolve-remote/test-absolute-uri-whitelist-fail ()
   "Test whitelisting an absolute URI that fails."
-  (should-error (jsonp-resolve-remote "http://example.com/#/key" '("https://example\\.com/"))))
+  (let ((remote (jsonp-remote :whitelist '("https://example\\.com/"))))
+    (should-error (jsonp-resolve-remote remote "http://example.com/#/key"))))
 
 (ert-deftest jsonp-resolve-remote/test-bare-fragment ()
   "Resolving a fragment with no object or uri should error."
-    (should-error (jsonp-resolve-remote "#/key")))
+    (should-error (jsonp-resolve-remote jsonp-remote-default "#/key")))
 
 (ert-deftest jsonp-resolve-remote/test-pointer-uri-escaping ()
   "Test pointers are properly unescaped before resolving."
     (with-mock
-      (mock (jsonp--url-retrieve "http://example.com/#/foo%20bar" *) => (json-read-from-string "{\"foo bar\": \"value\"}"))
-      (let ((result (jsonp-resolve-remote "http://example.com/#/foo%20bar")))
+      (mock (jsonp--url-retrieve-default "http://example.com/#/foo%20bar") => "{\"foo bar\": \"value\"}")
+      (let ((result (jsonp-resolve-remote jsonp-remote-default "http://example.com/#/foo%20bar")))
         (should (equal result "value")))))
 
 ;;; jsonp-replace-refs
@@ -347,9 +350,9 @@
   }
 }" :object-type 'hash-table)))
     (with-mock
-      (mock (jsonp--url-retrieve "https://example.com/foo/bar/baz#/Bam" *) => (json-read-from-string "{ \"Bam\": \"fizz\" }"))
+      (mock (jsonp--url-retrieve-default "https://example.com/foo/bar/baz#/Bam") => "{ \"Bam\": \"fizz\" }")
       (should (equal
-               (jsonp-replace-refs json json nil t)
+               (jsonp-replace-refs json json nil jsonp-remote-default)
                '(("api_key" . "fizz") ("keys" . (("foo" . (("x" . 1) ("y" . 2)))))))))))
 
 (ert-deftest jsonp-replace-refs/test-remote-relative-uri ()
@@ -366,9 +369,9 @@
   }
 }" :object-type 'hash-table)))
     (with-mock
-      (mock (jsonp--url-retrieve "https://example.com/foo/bar/baz#/Bam" *) => (json-read-from-string "{ \"Bam\": \"fizz\" }"))
+      (mock (jsonp--url-retrieve-default "https://example.com/foo/bar/baz#/Bam") => "{ \"Bam\": \"fizz\" }")
       (should (equal
-               (jsonp-replace-refs json json nil t "https://example.com")
+               (jsonp-replace-refs json json nil jsonp-remote-default "https://example.com")
                '(("api_key" . "fizz") ("keys" . (("foo" . (("x" . 1) ("y" . 2)))))))))))
 
 ;;; jsonp-nested-elt

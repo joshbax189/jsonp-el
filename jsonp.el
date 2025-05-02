@@ -34,6 +34,8 @@
 (require 'map)
 (require 'url)
 (require 'json)
+(require 'eieio)
+(require 'cl-lib)
 
 (defun jsonp-resolve (object pointer)
   "Resolve a JSON pointer in a parsed JSON object.
@@ -144,17 +146,40 @@ yields
           (url-target base-parsed) (url-target uri-parsed))
     (url-recreate-url base-parsed)))
 
-(defun jsonp-resolve-remote (uri &optional whitelist json-parse-function base-uri)
+(defclass jsonp-remote ()
+  ((whitelist :initarg :whitelist
+              :initform nil
+              :type list
+              :documentation "If provided, is a list of allowed URI patterns (regexp). Raises an error if the URI does not match any pattern.")
+   (json-parser :initarg :json-parser
+                :initform 'json-read-from-string
+                :type function
+                :documentation "The function to use for parsing the downloaded JSON. Defaults to `json-read-from-string'.")
+   (url-fetcher :initarg :url-fetcher
+                :initform 'jsonp--url-retrieve-default
+                :type function
+                :documentation "The function to use to download a url. Defaults to `jsonp--url-retrieve-default'."))
+  "Class for resolving JSON pointers remotely.")
+
+(cl-defmethod jsonp--url-retrieve ((remote jsonp-remote) url)
+  "Fetch JSON from URL and parse using settings from `jsonp-remote' REMOTE."
+  (let ((url-fetcher (slot-value remote 'url-fetcher))
+        (json-parse-function (slot-value remote 'json-parser))
+        (whitelist (slot-value remote 'whitelist)))
+    (when whitelist
+      (unless (seq-some (lambda (pattern) (string-match pattern url))
+                        whitelist)
+      (error "URL not in whitelist: %s" url)))
+    (let* ((response (funcall url-fetcher url))
+           (json-result (funcall json-parse-function response)))
+      json-result)))
+
+(cl-defmethod jsonp-resolve-remote ((remote jsonp-remote) uri &optional base-uri)
   "Resolve a JSON pointer from a URI.
 
-URI should be an absolute URI (downloads and parses JSON), then
-resolves any path fragment as a JSON pointer.
+REMOTE is the `jsonp-remote' instance to use.
 
-WHITELIST, if provided, is a list of allowed URI patterns (regexp).
-Raises an error if the URI does not match any pattern.
-
-JSON-PARSE-FUNCTION, if provided, is the function to use for parsing
-the downloaded JSON (defaults to `json-read-from-string').
+URI should be an absolute URI.
 
 BASE-URI is used to resolve URI if it is relative.
 See `jsonp-expand-relative-uri' for details."
@@ -163,34 +188,39 @@ See `jsonp-expand-relative-uri' for details."
         (setq uri (jsonp-expand-relative-uri uri base-uri))
       (error "URI must use HTTP or HTTPS: %s" uri)))
 
-  (when whitelist
-    (unless (seq-some (lambda (pattern) (string-match pattern uri))
-                      whitelist)
-      (error "URI not in whitelist: %s" uri)))
   (let* ((parsed-uri (url-generic-parse-url uri))
          (pointer (url-target parsed-uri))
          (pointer (url-unhex-string pointer))
-         (parse-fn (or json-parse-function 'json-read-from-string))
          ;; assume host will ignore fragment specifier here
-         (json-object (jsonp--url-retrieve uri parse-fn)))
+         (json-object (jsonp--url-retrieve remote uri)))
     (jsonp-resolve json-object pointer)))
 
-(defun jsonp--url-retrieve (url json-parse-function)
-  "Default fetch function.
-Fetch URL and call JSON-PARSE-FUNCTION with response body as a string."
+;; TODO add a cache, or use built-in url-retrieve cache?
+(defun jsonp--url-retrieve-default (url)
+  "Default JSONP fetch function based on `url-retrieve-synchronously'.
+Fetches URL and returns response body as a string."
   (with-current-buffer (url-retrieve-synchronously url t)
     (goto-char (point-min))
     (while (looking-at "^.") (forward-line))
     (forward-line)
-    (funcall json-parse-function (buffer-substring (point) (point-max)))))
+    (prog1 (buffer-substring (point) (point-max))
+      (kill-buffer))))
 
-(defun jsonp-nested-elt (json-obj keys &optional allow-remote base-uri)
+(defconst jsonp-remote-default (jsonp-remote)
+  "JSONP remote resolver with default settings.")
+
+(defun jsonp-nested-elt (json-obj keys &optional remote base-uri)
   "Get an element from JSON-OBJ traversing $refs and following KEYS.
 Unlike other functions, it returns nil if some key in KEYS fails to match.
 
 KEYS should be a list of string, symbol or number.  Strings will match symbol
 keys and vice-versa, but numbers must be used to index arrays.
-ALLOW-REMOTE if non-nil will resolve $ref by downloading URIs."
+
+REMOTE if non-nil should be an instance of `jsonp-remote' to use for downloading
+URIs.
+
+BASE-URI is used to resolve URI if it is relative.
+See `jsonp-expand-relative-uri' for details."
   (let ((root-obj json-obj)
         val)
 
@@ -227,23 +257,23 @@ ALLOW-REMOTE if non-nil will resolve $ref by downloading URIs."
                       (ref-string (map-elt val ref-key))
                       (new-val (if (string-prefix-p "#" ref-string)
                                    (jsonp-resolve root-obj ref-string)
-                                 ;; TODO pass whitelist and json-parse-function
-                                 (if allow-remote
-                                     (jsonp-resolve-remote ref-string nil nil base-uri)
+                                 (if remote
+                                     (jsonp-resolve-remote remote ref-string base-uri)
                                    (cl-return nil)))))
                 (setq json-obj new-val)
               ;; otherwise recurse into a regular object
               (setq json-obj val))))))
+      ;; TODO what if the result is itself a { $ref }
       (if keys
           (cl-return nil)
         (cl-return val)))))
 
 ;; NOTE: json-schema explicitly disallows $refs from referring to other $refs
-(defun jsonp-replace-refs (json-obj &optional root-obj max-depth allow-remote base-uri)
+(defun jsonp-replace-refs (json-obj &optional root-obj max-depth remote base-uri)
   "Given parsed JSON-OBJ expand any $ref.
 
 Fragments are resolved in ROOT-OBJ, remote URIs are only resolved
-if ALLOW-REMOTE is non-nil.
+if REMOTE is an instance of `jsonp-remote'.
 MAX-DEPTH is the maximum recursion depth when expanding refs.
 Default is 10."
   (setq root-obj (or root-obj json-obj)
@@ -262,24 +292,23 @@ Default is 10."
         ;; arrays
         ((vectorp val)
          ;; recurse and rebuild vector
-         (cons key (apply #'vector (map-values (jsonp-replace-refs val root-obj max-depth allow-remote)))))
+         (cons key (apply #'vector (map-values (jsonp-replace-refs val root-obj max-depth remote)))))
         ;; objects
         (t
          (if-let* ((ref-key (jsonp--map-contains-key val "$ref"))
                    (ref-string (map-elt val ref-key))
                    (new-val (if (string-prefix-p "#" ref-string)
                                 (jsonp-resolve root-obj ref-string)
-                              ;; TODO pass whitelist and json-parse-function
-                              (if allow-remote
-                                  (jsonp-resolve-remote ref-string nil nil base-uri)
+                              (if remote
+                                  (jsonp-resolve-remote remote ref-string base-uri)
                                 (error "Bad JSON $ref %s" ref-string)))))
              (if (or (not (mapp new-val))
                      (stringp new-val))
                  ;; do not replace in strings
                  (cons key new-val)
-               (cons key (jsonp-replace-refs new-val root-obj (1- max-depth) allow-remote)))
+               (cons key (jsonp-replace-refs new-val root-obj (1- max-depth) remote)))
            ;; otherwise recurse into a regular object
-           (cons key (jsonp-replace-refs val root-obj max-depth allow-remote))))))
+           (cons key (jsonp-replace-refs val root-obj max-depth remote))))))
      json-obj)))
 
 (provide 'jsonp)
