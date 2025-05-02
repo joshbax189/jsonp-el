@@ -147,17 +147,30 @@ yields
           (url-target base-parsed) (url-target uri-parsed))
     (url-recreate-url base-parsed)))
 
+;; NOTE there appears to be a bug in the url-retrieve cache
+(defun jsonp--url-retrieve-default (url)
+  "Default JSONP fetch function based on `url-retrieve-synchronously'.
+Fetches URL and returns response body as a string."
+  (with-current-buffer (url-retrieve-synchronously url t)
+    (goto-char (point-min))
+    (unless (re-search-forward "^Content-Type: application/json$" nil t)
+      (signal 'jsonp-remote-error "Expected HTTP response Content-Type to be application/json"))
+    (while (looking-at "^.") (forward-line))
+    (forward-line)
+    (prog1 (buffer-substring (point) (point-max))
+      (kill-buffer))))
+
 (defclass jsonp-remote ()
   ((whitelist :initarg :whitelist
               :initform nil
               :type list
               :documentation "If provided, is a list of allowed URI patterns (regexp). Raises an error if the URI does not match any pattern.")
    (json-parser :initarg :json-parser
-                :initform 'json-read-from-string
+                :initform #'json-read-from-string
                 :type function
                 :documentation "The function to use for parsing the downloaded JSON. Defaults to `json-read-from-string'.")
    (url-fetcher :initarg :url-fetcher
-                :initform 'jsonp--url-retrieve-default
+                :initform #'jsonp--url-retrieve-default
                 :type function
                 :documentation "The function to use to download a url. Defaults to `jsonp--url-retrieve-default'."))
   "Class for resolving JSON pointers remotely.")
@@ -195,19 +208,6 @@ See `jsonp-expand-relative-uri' for details."
          ;; assume host will ignore fragment specifier here
          (json-object (jsonp--url-retrieve remote uri)))
     (jsonp-resolve json-object pointer)))
-
-;; NOTE there appears to be a bug in the url-retrieve cache
-(defun jsonp--url-retrieve-default (url)
-  "Default JSONP fetch function based on `url-retrieve-synchronously'.
-Fetches URL and returns response body as a string."
-  (with-current-buffer (url-retrieve-synchronously url t)
-    (goto-char (point-min))
-    (unless (re-search-forward "^Content-Type: application/json$" nil t)
-      (error "Expected HTTP response Content-Type to be application/json"))
-    (while (looking-at "^.") (forward-line))
-    (forward-line)
-    (prog1 (buffer-substring (point) (point-max))
-      (kill-buffer))))
 
 (defconst jsonp-remote-default (jsonp-remote)
   "JSONP remote resolver with default settings.")
