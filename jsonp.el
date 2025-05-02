@@ -37,6 +37,10 @@
 (require 'eieio)
 (require 'cl-lib)
 
+(define-error 'jsonp-error "JSONP error")
+(define-error 'jsonp-resolution-error "JSONP resolution error" 'jsonp-error)
+(define-error 'jsonp-remote-error "JSONP remote error" 'jsonp-error)
+
 (defun jsonp-resolve (object pointer)
   "Resolve a JSON pointer in a parsed JSON object.
 
@@ -60,7 +64,8 @@ first decoded before further resolving."
     (if (string-prefix-p "/" pointer)
         ;; Remove leading empty string
         (setq pointer (string-remove-prefix "/" pointer))
-      (error "Malformed JSON pointer %s" pointer))
+      (signal 'jsonp-resolution-error
+              (format "Malformed JSON pointer %s" pointer)))
     (let ((parts (split-string pointer "/"))
           (current-object object))
       (while (and parts current-object)
@@ -82,12 +87,14 @@ first decoded before further resolving."
             (let ((index (string-to-number part)))
               (if (and (>= index 0) (< index (length current-object)))
                   (setq current-object (seq-elt current-object index))
-                (error "JSON pointer index out of bounds: %s" part))))
+                (signal 'jsonp-resolution-error
+                        (format "JSON pointer index out of bounds: %s" part)))))
            (t
-            (error "JSON pointer key not found: %s" part)))
+            (signal 'jsonp-resolution-error
+                    (format "JSON pointer key not found: %s" part))))
           (setq parts (cdr parts))))
       (if parts
-          (error "Could not resolve all parts of JSON pointer")
+          (signal 'jsonp-resolution-error "Could not resolve all parts of JSON pointer")
         current-object))))
 
 (defun jsonp--map-contains-key (obj key)
@@ -130,9 +137,11 @@ yields
          (path-segments (split-string joined-paths "/"))
          (path-result nil))
     (when (cdr (url-path-and-query base-parsed))
-      (error "Cannot merge URIs with query %s" base-uri))
+      (signal 'jsonp-remote-error
+              (format "Cannot merge URIs with query %s" base-uri)))
     (when (cdr (url-path-and-query uri-parsed))
-      (error "Cannot merge URIs with query %s" uri))
+      (signal 'jsonp-remote-error
+              (format "Cannot merge URIs with query %s" uri)))
     ;; merge dot paths
     (while path-segments
       (let ((next (car path-segments)))
@@ -183,7 +192,8 @@ Fetches URL and returns response body as a string."
     (when whitelist
       (unless (seq-some (lambda (pattern) (string-match pattern url))
                         whitelist)
-      (error "URL not in whitelist: %s" url)))
+      (signal 'jsonp-remote-error
+              (format "URL not in whitelist: %s" url))))
     (let* ((response (funcall url-fetcher url))
            (json-result (funcall json-parse-function response)))
       json-result)))
@@ -200,7 +210,8 @@ See `jsonp-expand-relative-uri' for details."
   (when (not (string-prefix-p "http" uri))
     (if (and base-uri (string-prefix-p "http" base-uri))
         (setq uri (jsonp-expand-relative-uri uri base-uri))
-      (error "URI must use HTTP or HTTPS: %s" uri)))
+      (signal 'jsonp-remote-error
+              (format "URI must use HTTP or HTTPS: %s" uri))))
 
   (let* ((parsed-uri (url-generic-parse-url uri))
          (pointer (url-target parsed-uri))
@@ -234,7 +245,7 @@ See `jsonp-expand-relative-uri' for details."
         (cl-return json-obj))
 
       (when (jsonp--primitive-p json-obj)
-        (error "JSONP resolution error: cannot index primitive value"))
+        (signal 'jsonp-resolution-error "Cannot index primitive value"))
 
       (while keys
         (let* ((key (car keys))
@@ -246,7 +257,7 @@ See `jsonp-expand-relative-uri' for details."
           (cond
            ((jsonp--primitive-p val)
             (if keys
-                (error "JSONP resolution error: cannot index primitive value")
+                (signal 'jsonp-resolution-error "Cannot index primitive value")
               (cl-return val)))
            ((jsonp--array-p val)
             ;; recurse
@@ -259,7 +270,8 @@ See `jsonp-expand-relative-uri' for details."
                                    (jsonp-resolve root-obj ref-string)
                                  (if remote
                                      (jsonp-resolve-remote remote ref-string base-uri)
-                                   (error "JSONP remote error: remote resolution disabled")))))
+                                   (signal 'jsonp-remote-error
+                                           (format "Cannot resolve %s remote resolution disabled" ref-string))))))
                 (setq json-obj new-val)
               ;; otherwise recurse into a regular object
               (setq json-obj val))))))
@@ -340,7 +352,8 @@ Default is 10."
                                  (jsonp-resolve root-obj ref-string)
                                (if remote
                                    (jsonp-resolve-remote remote ref-string base-uri)
-                                 (error "Bad JSON $ref %s" ref-string)))))
+                                 (signal 'jsonp-remote-error
+                                           (format "Cannot resolve %s remote resolution disabled" ref-string))))))
               (if (jsonp--primitive-p new-val)
                   ;; do not replace in strings
                   (map-put! json-obj key new-val)
