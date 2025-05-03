@@ -175,9 +175,9 @@ Fetches URL and returns response body as a string."
               :type list
               :documentation "If provided, is a list of allowed URI patterns (regexp). Raises an error if the URI does not match any pattern.")
    (json-parser :initarg :json-parser
-                :initform #'json-read-from-string
+                :initform #'json-parse-string
                 :type function
-                :documentation "The function to use for parsing the downloaded JSON. Defaults to `json-read-from-string'.")
+                :documentation "The function to use for parsing the downloaded JSON. Defaults to `json-parse-string'.")
    (url-fetcher :initarg :url-fetcher
                 :initform #'jsonp--url-retrieve-default
                 :type function
