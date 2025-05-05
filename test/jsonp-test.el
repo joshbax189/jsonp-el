@@ -491,6 +491,11 @@
 (ert-deftest jsonp-expand-relative-uri/test ()
   "Tests expansion."
   (should (equal (jsonp-expand-relative-uri ".." "http://example.com/foo/bar")
-                 "http://example.com/foo")))
+                 "http://example.com/foo"))
+  (should (equal
+           (jsonp-expand-relative-uri
+            "../foo/bar#baz"
+            "https://example.com/something")
+           "https://example.com/foo/bar#baz")))
 
 ;;; jsonp-test.el ends here
