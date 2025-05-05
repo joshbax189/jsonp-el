@@ -1,6 +1,6 @@
 (package "jsonp"
          "0.0.1"
-         "Resolve JSON pointers")
+         "Resolve JSON pointers in ELisp objects")
 
 (website-url "https://github.com/joshbax189/jsonp")
 (keywords "comm" "tools")
