@@ -1,5 +1,5 @@
 (package "jsonp"
-         "0.0.1"
+         "1.0.0"
          "Resolve JSON pointers in ELisp objects")
 
 (website-url "https://github.com/joshbax189/jsonp")

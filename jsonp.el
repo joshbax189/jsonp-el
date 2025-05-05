@@ -2,7 +2,7 @@
 
 ;; Author: Josh Bax
 ;; Maintainer: Josh Bax
-;; Version: 0.0.1
+;; Version: 1.0.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Homepage: https://github.com/joshbax189/jsonp
 ;; Keywords: comm, tools
