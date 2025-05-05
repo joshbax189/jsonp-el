@@ -34,9 +34,8 @@ jobs:
         eask lint checkdoc
         eask lint declare
         eask lint package
-        eask lint elint
+        eask compile --clean
 
     - name: Run tests
       run: |
-        eask install-deps --dev
         eask run script test
