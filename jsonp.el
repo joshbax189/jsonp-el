@@ -192,8 +192,8 @@ Fetches URL and returns response body as a string."
     (when whitelist
       (unless (seq-some (lambda (pattern) (string-match pattern url))
                         whitelist)
-      (signal 'jsonp-remote-error
-              (format "URL not in whitelist: %s" url))))
+        (signal 'jsonp-remote-error
+                (format "URL not in whitelist: %s" url))))
     (let* ((response (funcall url-fetcher url))
            (json-result (funcall json-parse-function response)))
       json-result)))
@@ -354,7 +354,7 @@ Default is 10."
                                (if remote
                                    (jsonp-resolve-remote remote ref-string base-uri)
                                  (signal 'jsonp-remote-error
-                                           (format "Cannot resolve %s remote resolution disabled" ref-string))))))
+                                         (format "Cannot resolve %s remote resolution disabled" ref-string))))))
               (if (jsonp--primitive-p new-val)
                   ;; do not replace in strings
                   (map-put! json-obj key new-val)
