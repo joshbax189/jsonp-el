@@ -45,15 +45,16 @@
   "Resolve a JSON pointer in a parsed JSON object.
 
 OBJECT is the parsed JSON object (e.g., the result of `json-read').
+
 POINTER is a string representing the JSON pointer (e.g., \"/a/b/c\").
-Backslashes are not removed from POINTER.
 
-Returns the value at the given pointer, or signals an error if the
-pointer is invalid or the value does not exist.  Returns OBJECT
-itself if POINTER is an empty string.
+Returns the value at the given pointer, or signals `jsonp-resolution-error'
+if the pointer is invalid or the value does not exist.  Returns OBJECT
+itself if POINTER is an empty string or nil.
 
-If the pointer begins with a #, it is treated as a URL fragment and
-first decoded before further resolving."
+If the pointer begins with a #, it is treated as a URL encoded string
+and is decoded before further resolving.  If the pointer does not
+begin with a #, then no backslashes will be removed."
   (when (or (string-prefix-p "#/" pointer)
             (string-equal "#" pointer))
     (setq pointer (url-unhex-string (string-remove-prefix "#" pointer))))
@@ -98,16 +99,21 @@ first decoded before further resolving."
         current-object))))
 
 (defun jsonp--map-contains-key (obj key)
-  "Non-nil if map-like OBJ has KEY as either a string or symbol.
-Returns the key as the correct type if present, nil otherwise."
+  "Non-nil if map-like OBJ has KEY as either a string, property or symbol.
+Returns the key as the correct type if present, nil otherwise.
+
+For example
+  (jsonp--map-contains-key '(:a 1) \"a\")
+yields
+  ':a"
   (cond
    ((map-contains-key obj key) key)
    ((map-contains-key obj (intern key)) (intern key))
-   ((map-contains-key obj (intern (concat ":" key))) (intern (concat ":" key)))
-   (t nil)))
+   ((map-contains-key obj (intern (concat ":" key))) (intern (concat ":" key)))))
 
 (defun jsonp--unescape-token (token)
-  "Replace the special sequences ~1 and ~0 in TOKEN string."
+  "Replace the special sequences ~1 and ~0 in TOKEN string.
+See https://datatracker.ietf.org/doc/html/rfc6901#section-4"
   (let* ((token-1 (string-replace "~1" "/" token))
          (token-2 (string-replace "~0" "~" token-1)))
     token-2))
@@ -117,13 +123,13 @@ Returns the key as the correct type if present, nil otherwise."
 OBJECT is the parsed JSON object.
 POINTER is the string JSON pointer.
 Returns the value at the pointer or nil if not resolved."
-  (condition-case nil
-      (jsonp-resolve object pointer)
-    (error nil)))
+  (ignore-errors
+      (jsonp-resolve object pointer)))
 
 (defun jsonp-expand-relative-uri (uri base-uri)
   "Expands URI relative to BASE-URI, removing any dot components.
-Assumes no query component in either URI.
+Assumes no query component in either URI and signals `jsonp-remote-error'
+otherwise.
 
 For example
   (jsonp-expand-relative-uri
@@ -159,7 +165,10 @@ yields
 ;; NOTE there appears to be a bug in the url-retrieve cache
 (defun jsonp--url-retrieve-default (url)
   "Default JSONP fetch function based on `url-retrieve-synchronously'.
-Fetches URL and returns response body as a string."
+Fetches URL and returns response body as a string.
+
+Signals `jsonp-remote-error' if the response's content-type is not
+\"application/json\"."
   (with-current-buffer (url-retrieve-synchronously url t)
     (goto-char (point-min))
     (unless (re-search-forward "^Content-Type: application/json$" nil t)
@@ -173,7 +182,7 @@ Fetches URL and returns response body as a string."
   ((whitelist :initarg :whitelist
               :initform nil
               :type list
-              :documentation "If provided, is a list of allowed URI patterns (regexp). Raises an error if the URI does not match any pattern.")
+              :documentation "If provided, is a list of allowed URI patterns (regexp). Signals `jsonp-remote-error' if the URI does not match any pattern.")
    (json-parser :initarg :json-parser
                 :initform #'json-parse-string
                 :type function
@@ -182,7 +191,7 @@ Fetches URL and returns response body as a string."
                 :initform #'jsonp--url-retrieve-default
                 :type function
                 :documentation "The function to use to download a url. Defaults to `jsonp--url-retrieve-default'."))
-  "Class for resolving JSON pointers remotely.")
+  "Configuration data for resolving JSON pointers remotely.")
 
 (cl-defmethod jsonp--url-retrieve ((remote jsonp-remote) url)
   "Fetch JSON from URL and parse using settings from `jsonp-remote' REMOTE."
@@ -203,7 +212,8 @@ Fetches URL and returns response body as a string."
 
 REMOTE is the `jsonp-remote' instance to use.
 
-URI should be an absolute URI.
+URI should be an absolute URI and must use either HTTP or HTTPS,
+otherwise `jsonp-remote-error' is signalled.
 
 BASE-URI is used to resolve URI if it is relative.
 See `jsonp-expand-relative-uri' for details."
@@ -225,7 +235,7 @@ See `jsonp-expand-relative-uri' for details."
 
 (defun jsonp-nested-elt (json-obj keys &optional remote base-uri)
   "Get an element from JSON-OBJ traversing $refs and following KEYS.
-If some key in KEYS fails to match, an error is signalled.
+If some key in KEYS fails to match, signals `jsonp-resolution-error'.
 Note that $refs are not replaced in the result.
 
 KEYS should be a list of string, symbol or number.  Strings will match symbol
@@ -281,8 +291,8 @@ See `jsonp-expand-relative-uri' for details."
   "Non-nil if JSON-OBJ is a parsed boolean, string, number or null.
 
 Note that `json-read-from-string' parses both the empty object and
-the null literal as nil, so in that case empty objects will be treated
-as primitive."
+the JSON \"null\" literal as nil, so in that case empty objects will
+be treated as primitive."
   (cond
    ((stringp json-obj) t)
    ((numberp json-obj) t)
@@ -295,7 +305,7 @@ as primitive."
    ((eq :null json-obj) t)))
 
 (defun jsonp--array-p (json-obj)
-  "Non-nil if JSON-OBJ is a parsed array.
+  "Non-nil if JSON-OBJ is a parsed JSON array.
 
 If arrays are parsed as lists then empty arrays and objects may be
 indistinguishable.  Therefore this returns nil when json-obj is nil."
@@ -322,10 +332,12 @@ indistinguishable.  Therefore this returns nil when json-obj is nil."
   "Given parsed JSON-OBJ expand any $ref modifying JSON-OBJ in place.
 
 Fragments are resolved in ROOT-OBJ, remote URIs are only resolved
-if REMOTE is an instance of `jsonp-remote'.
+if REMOTE is an instance of `jsonp-remote'.  Signals `jsonp-remote-error' if
+a remote URI is encountered in a $ref prop, but REMOTE is nil.
 
 MAX-DEPTH is the maximum recursion depth when expanding refs.
-Default is 10."
+Default is 10.  If replacement reaches this maximum depth, a warning
+is raised but the partial replacement is returned."
   (setq root-obj (or root-obj json-obj)
         max-depth (or max-depth 10))
   (cond
@@ -339,7 +351,6 @@ Default is 10."
       (let ((key (car keyval))
             (val (cdr keyval)))
         (cond
-         ;; ignore primitive values
          ((jsonp--primitive-p val)
           nil)
          ((jsonp--array-p val)
