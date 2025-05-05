@@ -487,4 +487,10 @@
   (let ((test-val (json-parse-string "{ \"$ref\": 123 }" :object-type 'plist)))
     (should (jsonp--map-contains-key test-val "$ref"))))
 
+;;;; jsonp-expand-relative-uri
+(ert-deftest jsonp-expand-relative-uri/test ()
+  "Tests expansion."
+  (should (equal (jsonp-expand-relative-uri ".." "http://example.com/foo/bar")
+                 "http://example.com/foo")))
+
 ;;; jsonp-test.el ends here
