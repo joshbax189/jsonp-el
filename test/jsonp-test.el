@@ -498,4 +498,25 @@
             "https://example.com/something")
            "https://example.com/foo/bar#baz")))
 
+;;;; jsonp--array-p
+(ert-deftest jsonp-array-p/test-vectors ()
+  "Tests whether vectors satisfy the checks."
+  (should (jsonp--array-p (vector)))
+  (should (jsonp--array-p (vector 1 2 3))))
+
+(ert-deftest jsonp-array-p/test-lists ()
+  "Tests whether simple lists satisfy the checks."
+  (should (jsonp--array-p '(1 2 3)))
+  (should (jsonp--array-p '("a" "b" "c")))
+  (should (jsonp--array-p '(("a" "b") "c"))))
+
+(ert-deftest jsonp-array-p/test-nil ()
+  "Nil should not satisfy array-p check."
+  (should (not (jsonp--array-p nil))))
+
+(ert-deftest jsonp-array-p/test-failing ()
+  "Tests array like things that should fail."
+  (should (not (jsonp--array-p '(:a 1))))
+  (should (not (jsonp--array-p '((a . 1))))))
+
 ;;; jsonp-test.el ends here

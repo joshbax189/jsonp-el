@@ -26,14 +26,16 @@
 
 ;;; Commentary:
 
-;; This library provides functions to resolve JSON pointers, as defined in RFC6901
-;; see https://datatracker.ietf.org/doc/html/rfc6901p,
-;; within parsed JSON objects, also supporting remote resolution (fetching JSON from a URI).
+;; This library provides functions to resolve JSON pointers, as defined in
+;; RFC6901 (https://datatracker.ietf.org/doc/html/rfc6901p),
+;; within parsed JSON objects, also supporting remote resolution (fetching
+;; JSON from a URI).
 
-;; JSON pointers can be resolved whether your JSON is parsed as an alist, plist or a hash table.
+;; JSON pointers can be resolved whether your JSON is parsed as an alist,
+;; plist or a hash table.
 
-;; It also includes functions to replace JSON references ("$ref" properties ) commonly used in
-;; JSON schema and OpenAPI specs.
+;; It also includes functions to replace JSON references ("$ref" properties)
+;; commonly used in JSON schema and OpenAPI specs.
 
 ;;; Code:
 
@@ -109,9 +111,9 @@ begin with a #, then no backslashes will be removed."
 Returns the key as the correct type if present, nil otherwise.
 
 For example
-  (jsonp--map-contains-key '(:a 1) \"a\")
+  (jsonp--map-contains-key (:a 1) \"a\")
 yields
-  ':a"
+  :a"
   (cond
    ((map-contains-key obj key) key)
    ((map-contains-key obj (intern key)) (intern key))
@@ -318,13 +320,12 @@ indistinguishable.  Therefore this returns nil when json-obj is nil."
   (cond
    ;; default for both json-parse-string and json-read-from-string
    ((vectorp json-obj) t)
-   ;; when parsed as a list
+   ;; when parsed as a non-empty list
    ((and (listp json-obj)
-         ;; don't know in empty case
-         (not (null json-obj))
+         json-obj
          ;; it should not be a plist
-         (not (or (not (symbolp (car json-obj)))
-                  (not (string-prefix-p ":" (symbol-name (car json-obj))))))
+         (or (not (symbolp (car json-obj)))
+             (not (string-prefix-p ":" (symbol-name (car json-obj)))))
          ;; it should not be an alist:
          ;; either the car is not a list
          (or (not (listp (car json-obj)))
