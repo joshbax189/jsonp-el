@@ -1,10 +1,31 @@
-;;; -*- lexical-binding: t -*-
+;;; jsonp-test.el --- ERT for jsonp.el -*- lexical-binding: t -*-
+
+;; Author: Josh Bax
+
+
+;; This file is not part of GNU Emacs
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+;;; Code:
 
 (require 'ert)
 (require 'jsonp)
 (require 'el-mock)
 
-;;; jsonp-resolve
+;;;; jsonp-resolve
 (ert-deftest jsonp-resolve/test-nested-object ()
   "Resolves a value in a nested object structure."
   (let ((example (json-parse-string "{\"a\": {\"b\": [{\"c\": 1}, {\"c\": 2}]}, \"d\": \"value\"}"))
@@ -198,7 +219,7 @@
         (expected 1))
     (should (equal (jsonp-resolve example "/a/b/0/c") expected))))
 
-;;; Other
+;;;; Other
 (ert-deftest jsonp/test-json-read-string-number-keys ()
   "Tests default behavior of `json-read-from-string'."
   (let ((result (json-read-from-string "{ \"1\": \"a\", \"3\": \"b\" }")))
@@ -211,7 +232,7 @@
     (should (equal (type-of (car (car (map-pairs result))))
                    'string))))
 
-;;; jsonp-resolve-remote
+;;;; jsonp-resolve-remote
 (ert-deftest jsonp-resolve-remote/test-absolute-uri ()
   "Test resolving from an absolute URI."
   (with-mock
@@ -252,7 +273,7 @@
       (let ((result (jsonp-resolve-remote jsonp-remote-default "http://example.com/#/foo%20bar")))
         (should (equal result "value")))))
 
-;;; jsonp-replace-refs
+;;;; jsonp-replace-refs
 (ert-deftest jsonp-replace-refs/test ()
   "Should expand a single $ref."
   (let ((json (json-parse-string "{
@@ -417,7 +438,7 @@
                (jsonp-replace-refs json json nil jsonp-remote-default "https://example.com")
                '((api_key . "fizz") (keys . ((foo . ((x . 1) (y . 2)))))))))))
 
-;;; jsonp-nested-elt
+;;;; jsonp-nested-elt
 (ert-deftest jsonp-nested-elt/test ()
   "Should traverse a local $ref."
   (let ((json (json-parse-string "{
@@ -460,10 +481,10 @@
            (jsonp-nested-elt (vector "a" "b") (list 1))
            "b")))
 
-;;; jsonp--map-contains-key
+;;;; jsonp--map-contains-key
 (ert-deftest jsonp--map-contains-key/test-plists ()
   "Tests key naming in plists."
   (let ((test-val (json-parse-string "{ \"$ref\": 123 }" :object-type 'plist)))
     (should (jsonp--map-contains-key test-val "$ref"))))
 
-;; jsonp-test.el ends here
+;;; jsonp-test.el ends here
