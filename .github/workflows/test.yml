@@ -1,0 +1,42 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: silex/emacs:${{ matrix.emacs-version }}-ci-eask
+    strategy:
+      fail-fast: false
+      matrix:
+        emacs-version:
+          - 28.2
+          - 29.4
+          - master
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Dependencies
+      run: eask install-deps --dev
+
+    - name: Linting
+      run: |
+        eask lint checkdoc
+        eask lint declare
+        eask lint package
+        eask lint elint
+
+    - name: Run tests
+      run: |
+        eask install-deps --dev
+        eask run script test
