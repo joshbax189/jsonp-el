@@ -98,7 +98,7 @@ first decoded before further resolving."
         current-object))))
 
 (defun jsonp--map-contains-key (obj key)
-  "Check if OBJ contains KEY either as a string or symbol.
+  "Non-nil if map-like OBJ has KEY as either a string or symbol.
 Returns the key as the correct type if present, nil otherwise."
   (cond
    ((map-contains-key obj key) key)
@@ -306,8 +306,9 @@ indistinguishable.  Therefore this returns nil when json-obj is nil."
    ((and (listp json-obj)
          ;; don't know in empty case
          (not (null json-obj))
-         ;; it should not be a plist, and
-         (not (plistp json-obj))
+         ;; it should not be a plist
+         (not (or (not (symbolp (car json-obj)))
+                  (not (string-prefix-p ":" (symbol-name (car json-obj))))))
          ;; it should not be an alist:
          ;; either the car is not a list
          (or (not (listp (car json-obj)))
