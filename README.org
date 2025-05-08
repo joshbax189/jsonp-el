@@ -19,8 +19,8 @@ First add the library to your load path.
   (jsonp-resolve json-object pointer)) ;; Returns 1
 
 ;; Resolve a remote JSON pointer
-;; jsonp-remote-default configures how to fetch and parse the remote JSON
-(jsonp-resolve-remote jsonp-remote-default "https://example.com/data.json#/a/b")
+;; jsonp-remote configures how to fetch and parse the remote JSON
+(jsonp-resolve-remote (jsonp-remote) "https://example.com/data.json#/a/b")
 
 ;; Resolve a JSON pointer without signalling errors
 (jsonp-resolve-safe json-object "/non/existent/path") ;; Returns nil
@@ -39,14 +39,15 @@ First add the library to your load path.
 
 When resolving remote JSON pointers, you can customize the JSON parser and the URL fetcher using an instance of the ~jsonp-remote~ class.
 
-To use the default settings, just use ~jsonp-remote-default~
+To use the default settings, just call ~jsonp-remote~ with no arguments
 #+begin_src emacs-lisp
 ;; Resolve a remote JSON pointer with default settings
-(jsonp-resolve-remote jsonp-remote-default "https://example.com/data.json#/a/b")
+(jsonp-resolve-remote (jsonp-remote) "https://example.com/data.json#/a/b")
 #+end_src
 
 Note that the default URL fetcher is ~url-retrieve-synchronously~, which blocks.
-Performance may be bad when using ~jsonp-replace-refs~ with a lot of remote references.
+
+Responses are cached, so in most cases performance should be adequate.
 
 *** Custom JSON Parser
 
@@ -74,6 +75,8 @@ For example, using [[https://github.com/alphapapa/plz.el][plz.el]] to fetch
        (my-remote (json-remote :url-fetcher plz-get-string)))
   (jsonp-resolve-remote my-remote "https://example.com/data.json#/a/b")) ;; ERROR
 #+end_src
+
+The cache operates with custom URL fetchers too.
 
 *** Whitelisting Domains
 

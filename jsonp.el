@@ -2,7 +2,7 @@
 
 ;; Author: Josh Bax
 ;; Maintainer: Josh Bax
-;; Version: 1.0.0
+;; Version: 1.1.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Homepage: https://github.com/joshbax189/jsonp
 ;; Keywords: comm, tools
@@ -170,16 +170,17 @@ yields
           (url-target base-parsed) (url-target uri-parsed))
     (url-recreate-url base-parsed)))
 
-;; NOTE there appears to be a bug in the url-retrieve cache
 (defun jsonp--url-retrieve-default (url)
   "Default JSONP fetch function based on `url-retrieve-synchronously'.
 Fetches URL and returns response body as a string.
 
 Signals `jsonp-remote-error' if the response's content-type is not
 \"application/json\"."
+  (message "JSONP: visiting %s" url)
   (with-current-buffer (url-retrieve-synchronously url t)
     (goto-char (point-min))
-    (unless (re-search-forward "^Content-Type: application/json$" nil t)
+    (if (re-search-forward "^Content-Type: application/json\\(; ?.*\\)?$" nil t)
+        (forward-line)
       (signal 'jsonp-remote-error "Expected HTTP response Content-Type to be application/json"))
     (while (looking-at "^.") (forward-line))
     (forward-line)
@@ -198,21 +199,32 @@ Signals `jsonp-remote-error' if the response's content-type is not
    (url-fetcher :initarg :url-fetcher
                 :initform #'jsonp--url-retrieve-default
                 :type function
-                :documentation "The function to use to download a url. Defaults to `jsonp--url-retrieve-default'."))
+                :documentation "The function to use to download a url. Defaults to `jsonp--url-retrieve-default'.")
+   (url-cache :initarg :url-cache
+              :initform nil
+              :type list
+              :documentation "Simple alist cache of urls and response body. See usage in `jsonp--url-retrieve'."))
   "Configuration data for resolving JSON pointers remotely.")
 
 (cl-defmethod jsonp--url-retrieve ((remote jsonp-remote) url)
   "Fetch JSON from URL and parse using settings from `jsonp-remote' REMOTE."
   (let ((url-fetcher (slot-value remote 'url-fetcher))
         (json-parse-function (slot-value remote 'json-parser))
-        (whitelist (slot-value remote 'whitelist)))
+        (whitelist (slot-value remote 'whitelist))
+        (cache (slot-value remote 'url-cache)))
     (when whitelist
       (unless (seq-some (lambda (pattern) (string-match pattern url))
                         whitelist)
         (signal 'jsonp-remote-error
                 (format "URL not in whitelist: %s" url))))
-    (let* ((response (funcall url-fetcher url))
+    (let* ((url-for-cache (car (string-split url "#")))
+           (cached-result (cdr (assoc-string url-for-cache cache)))
+           (response (or cached-result
+                         (funcall url-fetcher url)))
            (json-result (funcall json-parse-function response)))
+      (unless (or (string-empty-p url-for-cache)
+                  cached-result)
+        (push (cons url-for-cache response) (oref remote url-cache)))
       json-result)))
 
 (cl-defmethod jsonp-resolve-remote ((remote jsonp-remote) uri &optional base-uri)
@@ -237,9 +249,6 @@ See `jsonp-expand-relative-uri' for details."
          ;; assume host will ignore fragment specifier here
          (json-object (jsonp--url-retrieve remote uri)))
     (jsonp-resolve json-object pointer)))
-
-(defconst jsonp-remote-default (jsonp-remote)
-  "JSONP remote resolver with default settings.")
 
 (defun jsonp-nested-elt (json-obj keys &optional remote base-uri)
   "Get an element from JSON-OBJ traversing $refs and following KEYS.

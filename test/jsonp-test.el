@@ -232,12 +232,34 @@
     (should (equal (type-of (car (car (map-pairs result))))
                    'string))))
 
+(ert-deftest jsonp--url-retrieve-default/test-content-type ()
+  "Tests mimetype format."
+  (with-mock
+    (stub url-retrieve-synchronously =>
+          (with-current-buffer (generate-new-buffer " *foo*" t)
+            (insert "HTTP/1.1 200 OK
+Date: Thu, 08 May 2025 21:30:56 GMT
+Content-Type: application/json; charset=utf-8
+Content-Length: 2266
+Connection: keep-alive
+accept-ranges: bytes
+last-modified: Fri, 28 Feb 2025 22:48:30 GMT
+x-envoy-upstream-service-time: 1
+server: istio-envoy
+
+{}
+")
+            (current-buffer)))
+    (should (equal
+             (jsonp--url-retrieve-default "foo")
+             "{}\n"))))
+
 ;;;; jsonp-resolve-remote
 (ert-deftest jsonp-resolve-remote/test-absolute-uri ()
   "Test resolving from an absolute URI."
   (with-mock
     (stub jsonp--url-retrieve-default => "{\"key\": \"value\"}")
-    (let ((result (jsonp-resolve-remote jsonp-remote-default "http://example.com/#/key")))
+    (let ((result (jsonp-resolve-remote (jsonp-remote) "http://example.com/#/key")))
       (should (equal result "value")))))
 
 (ert-deftest jsonp-resolve-remote/test-absolute-uri-with-custom-parser ()
@@ -264,13 +286,13 @@
 
 (ert-deftest jsonp-resolve-remote/test-bare-fragment ()
   "Resolving a fragment with no object or uri should error."
-    (should-error (jsonp-resolve-remote jsonp-remote-default "#/key")))
+    (should-error (jsonp-resolve-remote (jsonp-remote) "#/key")))
 
 (ert-deftest jsonp-resolve-remote/test-pointer-uri-escaping ()
   "Test pointers are properly unescaped before resolving."
     (with-mock
       (mock (jsonp--url-retrieve-default "http://example.com/#/foo%20bar") => "{\"foo bar\": \"value\"}")
-      (let ((result (jsonp-resolve-remote jsonp-remote-default "http://example.com/#/foo%20bar")))
+      (let ((result (jsonp-resolve-remote (jsonp-remote) "http://example.com/#/foo%20bar")))
         (should (equal result "value")))))
 
 ;;;; jsonp-replace-refs
@@ -416,7 +438,7 @@
     (with-mock
       (mock (jsonp--url-retrieve-default "https://example.com/foo/bar/baz#/Bam") => "{ \"Bam\": \"fizz\" }")
       (should (equal
-               (jsonp-replace-refs json json nil jsonp-remote-default)
+               (jsonp-replace-refs json json nil (jsonp-remote))
                '((api_key . "fizz") (keys . ((foo . ((x . 1) (y . 2)))))))))))
 
 (ert-deftest jsonp-replace-refs/test-remote-relative-uri ()
@@ -435,7 +457,7 @@
     (with-mock
       (mock (jsonp--url-retrieve-default "https://example.com/foo/bar/baz#/Bam") => "{ \"Bam\": \"fizz\" }")
       (should (equal
-               (jsonp-replace-refs json json nil jsonp-remote-default "https://example.com")
+               (jsonp-replace-refs json json nil (jsonp-remote) "https://example.com")
                '((api_key . "fizz") (keys . ((foo . ((x . 1) (y . 2)))))))))))
 
 ;;;; jsonp-nested-elt
@@ -518,5 +540,54 @@
   "Tests array like things that should fail."
   (should (not (jsonp--array-p '(:a 1))))
   (should (not (jsonp--array-p '((a . 1))))))
+
+;;; jsonp--url-retrieve
+(ert-deftest jsonp--url-retrieve/cache ()
+  "Cache value should be used when repeating calls."
+  (with-mock
+    (mock (jsonp--url-retrieve-default *) => "{ \"foo\": \"bar\" }" :times 1)
+    (let* ((remote (jsonp-remote
+                    :json-parser (lambda (s)
+                                   (json-parse-string s :object-type 'alist))
+                    :url-cache nil))
+           (url "http://example.com/data")
+           (result1 (jsonp--url-retrieve remote url))
+           (cache (slot-value remote 'url-cache))
+           (result2 (jsonp--url-retrieve remote url)))
+      (should (equal (alist-get 'foo result1) "bar"))
+      (should (slot-value remote 'url-cache))
+      (should (equal (slot-value remote 'url-cache)
+                     (list (cons url "{ \"foo\": \"bar\" }"))))
+      (should (equal (alist-get 'foo result2) "bar")))))
+
+(ert-deftest jsonp--url-retrieve/fragment-cache ()
+  "Cache value should be correct when URL fragment is present."
+  (let* ((remote (jsonp-remote
+                  :url-fetcher (lambda (url)
+                                 (format "{\"url\": \"%s\"}" url))
+                  :json-parser (lambda (s)
+                                   (json-parse-string s :object-type 'alist))
+                  :url-cache nil))
+         (url "http://example.com/data#foo")
+         (base-url "http://example.com/data")
+         (result1 (jsonp--url-retrieve remote url))
+         (cache (slot-value remote 'url-cache))
+         (result2 (jsonp--url-retrieve remote url)))
+    (should (equal (alist-get 'url result1) url))
+    (should (equal (length cache) 1))
+    (should (equal (alist-get 'url result2) url))
+    (should (equal (length cache) 1))
+    (should (equal (car (car cache)) base-url))))
+
+(ert-deftest jsonp--url-retrieve/no-cache-if-empty-url ()
+  "Local pointer references should not be cached."
+  (let* ((remote (jsonp-remote
+                  :url-fetcher (lambda (url)
+                                 (format "{\"url\": \"%s\"}" url))
+                  :url-cache nil))
+         (url "#/foo")
+         (result1 (jsonp--url-retrieve remote url))
+         (cache (slot-value remote 'url-cache)))
+    (should (equal (length cache) 0))))
 
 ;;; jsonp-test.el ends here
