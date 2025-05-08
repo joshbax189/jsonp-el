@@ -217,7 +217,7 @@ Signals `jsonp-remote-error' if the response's content-type is not
                         whitelist)
         (signal 'jsonp-remote-error
                 (format "URL not in whitelist: %s" url))))
-    (let* ((url-for-cache (car (string-split url "#")))
+    (let* ((url-for-cache (car (split-string url "#")))
            (cached-result (cdr (assoc-string url-for-cache cache)))
            (response (or cached-result
                          (funcall url-fetcher url)))
