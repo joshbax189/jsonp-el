@@ -460,6 +460,32 @@ server: istio-envoy
                (jsonp-replace-refs json json nil (jsonp-remote) "https://example.com")
                '((api_key . "fizz") (keys . ((foo . ((x . 1) (y . 2)))))))))))
 
+;; TODO
+(ert-deftest jsonp-replace-refs/test-remote-rewrite ()
+  "Should expand local URLs when replacing."
+  (let ((json (json-parse-string "{
+  \"api_key\": {
+    \"$ref\": \"./foo/bar/baz#/x\"
+  }
+}" :object-type 'alist)))
+    (with-mock
+      (mock (jsonp--url-retrieve-default "https://example.com/foo/bar/baz#/x") => "{
+  \"x\": {
+    \"$ref\": \"#/y\"
+  },
+  \"y\": 5
+}")
+      (let ((result (jsonp-replace-refs json json 1
+                                   (jsonp-remote :json-parser (lambda (s)
+                                                           (json-parse-string s :object-type 'alist)))
+                                   "https://example.com")))
+        (should (equal
+                 ;; result
+                 ;; '((api_key . (($ref . "https://example.com/foo/bar/baz#/y"))))
+                 (map-nested-elt result '(api_key $ref))
+                 "https://example.com/foo/bar/baz#/y"
+                 ))))))
+
 ;;;; jsonp-nested-elt
 (ert-deftest jsonp-nested-elt/test ()
   "Should traverse a local $ref."
