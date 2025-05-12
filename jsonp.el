@@ -139,36 +139,47 @@ Returns the value at the pointer or nil if not resolved."
 Assumes no query component in either URI and signals `jsonp-remote-error'
 otherwise.
 
+The result URI must use HTTP or HTTPS, otherwise this signals.
+
 For example
   (jsonp-expand-relative-uri
     \"../foo/bar#baz\"
     \"https://example.com/something\")
 yields
   \"https://example.com/foo/bar#baz\""
-  (let* ((base-parsed (url-generic-parse-url base-uri))
-         (uri-parsed (url-generic-parse-url uri))
-         (joined-paths (concat (url-filename base-parsed) "/" (url-filename uri-parsed)))
-         (path-segments (split-string joined-paths "/"))
-         (path-result nil))
-    (when (cdr (url-path-and-query base-parsed))
-      (signal 'jsonp-remote-error
-              (format "Cannot merge URIs that include a query string %s" base-uri)))
-    (when (cdr (url-path-and-query uri-parsed))
-      (signal 'jsonp-remote-error
-              (format "Cannot merge URIs that include a query string %s" uri)))
-    ;; merge dot paths
-    (while path-segments
-      (let ((next (car path-segments)))
-        (setq path-segments (cdr path-segments))
-        (pcase next
-          ((or "" "."))
-          (".." (setq path-result (cdr path-result)))
-          (_ (push next path-result)))))
-    (setq path-result (concat "/" (string-join (reverse path-result) "/")))
+  (let ((base-parsed (url-generic-parse-url base-uri))
+        (uri-parsed (url-generic-parse-url uri)))
+    (if (url-fullness uri-parsed)
+        (if (not (string-prefix-p "http" uri))
+            (signal 'jsonp-remote-error
+                    (format "URI must use HTTP or HTTPS: %s" uri))
+          uri)
+      ;; error checking
+      (when (not (string-prefix-p "http" base-uri))
+        (signal 'jsonp-remote-error
+                (format "URI must use HTTP or HTTPS: %s" base-uri)))
+      (when (cdr (url-path-and-query base-parsed))
+        (signal 'jsonp-remote-error
+                (format "Cannot merge URIs that include a query string %s" base-uri)))
+      (when (cdr (url-path-and-query uri-parsed))
+        (signal 'jsonp-remote-error
+                (format "Cannot merge URIs that include a query string %s" uri)))
+      ;; merge dot paths
+      (let* ((joined-paths (concat (url-filename base-parsed) "/" (url-filename uri-parsed)))
+             (path-segments (split-string joined-paths "/"))
+             (path-result nil))
+        (while path-segments
+          (let ((next (car path-segments)))
+            (setq path-segments (cdr path-segments))
+            (pcase next
+              ((or "" "."))
+              (".." (setq path-result (cdr path-result)))
+              (_ (push next path-result)))))
+        (setq path-result (concat "/" (string-join (reverse path-result) "/")))
 
-    (setf (url-filename base-parsed) path-result
-          (url-target base-parsed) (url-target uri-parsed))
-    (url-recreate-url base-parsed)))
+        (setf (url-filename base-parsed) path-result
+              (url-target base-parsed) (url-target uri-parsed))
+        (url-recreate-url base-parsed)))))
 
 (defun jsonp--url-retrieve-default (url)
   "Default JSONP fetch function based on `url-retrieve-synchronously'.
@@ -237,11 +248,7 @@ otherwise `jsonp-remote-error' is signalled.
 
 BASE-URI is used to resolve URI if it is relative.
 See `jsonp-expand-relative-uri' for details."
-  (when (not (string-prefix-p "http" uri))
-    (if (and base-uri (string-prefix-p "http" base-uri))
-        (setq uri (jsonp-expand-relative-uri uri base-uri))
-      (signal 'jsonp-remote-error
-              (format "URI must use HTTP or HTTPS: %s" uri))))
+  (setq uri (jsonp-expand-relative-uri uri base-uri))
 
   (let* ((parsed-uri (url-generic-parse-url uri))
          (pointer (url-target parsed-uri))

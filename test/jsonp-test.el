@@ -546,6 +546,15 @@ server: istio-envoy
             "https://example.com/something")
            "https://example.com/foo/bar#baz")))
 
+(ert-deftest jsonp-expand-relative-uri/test-absolute ()
+  "Absolute URLs should not be expanded."
+  (should (equal (jsonp-expand-relative-uri "http://other.net/baz" "http://example.com/foo/bar")
+                 "http://other.net/baz")))
+
+(ert-deftest jsonp-expand-relative-uri/test-non-http ()
+  "Absolute URLs should not be expanded."
+  (should-error (jsonp-expand-relative-uri "ftp://other.net/baz" "http://example.com/foo/bar")))
+
 ;;;; jsonp--array-p
 (ert-deftest jsonp-array-p/test-vectors ()
   "Tests whether vectors satisfy the checks."
