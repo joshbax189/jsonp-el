@@ -152,10 +152,10 @@ yields
          (path-result nil))
     (when (cdr (url-path-and-query base-parsed))
       (signal 'jsonp-remote-error
-              (format "Cannot merge URIs with query %s" base-uri)))
+              (format "Cannot merge URIs that include a query string %s" base-uri)))
     (when (cdr (url-path-and-query uri-parsed))
       (signal 'jsonp-remote-error
-              (format "Cannot merge URIs with query %s" uri)))
+              (format "Cannot merge URIs that include a query string %s" uri)))
     ;; merge dot paths
     (while path-segments
       (let ((next (car path-segments)))
