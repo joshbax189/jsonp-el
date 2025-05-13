@@ -187,7 +187,6 @@ Fetches URL and returns response body as a string.
 
 Signals `jsonp-remote-error' if the response's content-type is not
 \"application/json\"."
-  (message "JSONP: visiting %s" url)
   (with-current-buffer (url-retrieve-synchronously url t)
     (goto-char (point-min))
     (if (re-search-forward "^Content-Type: application/json\\(; ?.*\\)?$" nil t)
@@ -350,6 +349,28 @@ indistinguishable.  Therefore this returns nil when json-obj is nil."
              (not (symbolp (car (car json-obj))))))
     t)))
 
+(defun jsonp--rewrite-local-refs (json-obj base-uri)
+  "Rewrite local JSON pointers in JSON-OBJ to absolute ones using BASE-URI."
+  (if (jsonp--primitive-p json-obj)
+      json-obj
+    (dolist (keyval (map-pairs json-obj))
+      (let ((key (car keyval))
+            (val (cdr keyval)))
+        (cond
+         ((or (equal key "$ref")
+              (equal key '$ref)
+              (equal key :$ref))
+          (when (and (stringp val)
+                   (string-prefix-p "#" val))
+              (map-put! json-obj key (concat base-uri val))))
+         ((jsonp--primitive-p val)
+          nil)
+         (t
+          ;; recurse and rebuild
+          (let ((updated (jsonp--rewrite-local-refs val base-uri)))
+            (map-put! json-obj key updated))))))
+    json-obj))
+
 ;; NOTE: json-schema explicitly disallows $refs from referring to other $refs
 (defun jsonp-replace-refs (json-obj &optional root-obj max-depth remote base-uri)
   "Given parsed JSON-OBJ expand any $ref modifying JSON-OBJ in place.
@@ -382,17 +403,24 @@ is raised but the partial replacement is returned."
             (map-put! json-obj key updated)))
          (t
           (if-let* ((ref-key (jsonp--map-contains-key val "$ref"))
-                    (ref-string (map-elt val ref-key))
-                    (new-val (if (string-prefix-p "#" ref-string)
+                    (ref-string (map-elt val ref-key)))
+              (let ((new-val (if (string-prefix-p "#" ref-string)
                                  (jsonp-resolve root-obj ref-string)
                                (if remote
                                    (jsonp-resolve-remote remote ref-string base-uri)
                                  (signal 'jsonp-remote-error
                                          (format "Cannot resolve %s remote resolution disabled" ref-string))))))
-              (if (jsonp--primitive-p new-val)
-                  ;; do not replace in strings
-                  (map-put! json-obj key new-val)
-                (map-put! json-obj key (jsonp-replace-refs new-val root-obj (1- max-depth) remote)))
+               (if (jsonp--primitive-p new-val)
+                   ;; do not replace in strings
+                   (map-put! json-obj key new-val)
+                 ;; When a ref is replaced its local refs should be renamed to
+                 ;; be absolute wrt the uri of the file they come from.
+                 ;; Otherwise the local uris may not be resolvable any more!
+                 (unless (string-prefix-p "#" ref-string)
+                   (let* ((remote-uri (jsonp-expand-relative-uri ref-string base-uri))
+                          (remote-base (car (split-string remote-uri "#"))))
+                     (setq new-val (jsonp--rewrite-local-refs new-val remote-base))))
+                 (map-put! json-obj key (jsonp-replace-refs new-val root-obj (1- max-depth) remote))))
             ;; otherwise recurse into a regular object
             (map-put! json-obj key (jsonp-replace-refs val root-obj max-depth remote)))))))
     ;; return possibly modified object
