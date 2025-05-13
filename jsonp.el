@@ -2,7 +2,7 @@
 
 ;; Author: Josh Bax
 ;; Maintainer: Josh Bax
-;; Version: 1.1.1
+;; Version: 1.1.2
 ;; Package-Requires: ((emacs "28.1"))
 ;; Homepage: https://github.com/joshbax189/jsonp-el
 ;; Keywords: comm, tools
@@ -139,36 +139,47 @@ Returns the value at the pointer or nil if not resolved."
 Assumes no query component in either URI and signals `jsonp-remote-error'
 otherwise.
 
+The result URI must use HTTP or HTTPS, otherwise this signals.
+
 For example
   (jsonp-expand-relative-uri
     \"../foo/bar#baz\"
     \"https://example.com/something\")
 yields
   \"https://example.com/foo/bar#baz\""
-  (let* ((base-parsed (url-generic-parse-url base-uri))
-         (uri-parsed (url-generic-parse-url uri))
-         (joined-paths (concat (url-filename base-parsed) "/" (url-filename uri-parsed)))
-         (path-segments (split-string joined-paths "/"))
-         (path-result nil))
-    (when (cdr (url-path-and-query base-parsed))
-      (signal 'jsonp-remote-error
-              (format "Cannot merge URIs with query %s" base-uri)))
-    (when (cdr (url-path-and-query uri-parsed))
-      (signal 'jsonp-remote-error
-              (format "Cannot merge URIs with query %s" uri)))
-    ;; merge dot paths
-    (while path-segments
-      (let ((next (car path-segments)))
-        (setq path-segments (cdr path-segments))
-        (pcase next
-          ((or "" "."))
-          (".." (setq path-result (cdr path-result)))
-          (_ (push next path-result)))))
-    (setq path-result (concat "/" (string-join (reverse path-result) "/")))
+  (let ((base-parsed (url-generic-parse-url base-uri))
+        (uri-parsed (url-generic-parse-url uri)))
+    (if (url-fullness uri-parsed)
+        (if (not (string-prefix-p "http" uri))
+            (signal 'jsonp-remote-error
+                    (format "URI must use HTTP or HTTPS: %s" uri))
+          uri)
+      ;; error checking
+      (when (not (string-prefix-p "http" base-uri))
+        (signal 'jsonp-remote-error
+                (format "URI must use HTTP or HTTPS: %s" base-uri)))
+      (when (cdr (url-path-and-query base-parsed))
+        (signal 'jsonp-remote-error
+                (format "Cannot merge URIs that include a query string %s" base-uri)))
+      (when (cdr (url-path-and-query uri-parsed))
+        (signal 'jsonp-remote-error
+                (format "Cannot merge URIs that include a query string %s" uri)))
+      ;; merge dot paths
+      (let* ((joined-paths (concat (url-filename base-parsed) "/" (url-filename uri-parsed)))
+             (path-segments (split-string joined-paths "/"))
+             (path-result nil))
+        (while path-segments
+          (let ((next (car path-segments)))
+            (setq path-segments (cdr path-segments))
+            (pcase next
+              ((or "" "."))
+              (".." (setq path-result (cdr path-result)))
+              (_ (push next path-result)))))
+        (setq path-result (concat "/" (string-join (reverse path-result) "/")))
 
-    (setf (url-filename base-parsed) path-result
-          (url-target base-parsed) (url-target uri-parsed))
-    (url-recreate-url base-parsed)))
+        (setf (url-filename base-parsed) path-result
+              (url-target base-parsed) (url-target uri-parsed))
+        (url-recreate-url base-parsed)))))
 
 (defun jsonp--url-retrieve-default (url)
   "Default JSONP fetch function based on `url-retrieve-synchronously'.
@@ -176,7 +187,6 @@ Fetches URL and returns response body as a string.
 
 Signals `jsonp-remote-error' if the response's content-type is not
 \"application/json\"."
-  (message "JSONP: visiting %s" url)
   (with-current-buffer (url-retrieve-synchronously url t)
     (goto-char (point-min))
     (if (re-search-forward "^Content-Type: application/json\\(; ?.*\\)?$" nil t)
@@ -237,11 +247,7 @@ otherwise `jsonp-remote-error' is signalled.
 
 BASE-URI is used to resolve URI if it is relative.
 See `jsonp-expand-relative-uri' for details."
-  (when (not (string-prefix-p "http" uri))
-    (if (and base-uri (string-prefix-p "http" base-uri))
-        (setq uri (jsonp-expand-relative-uri uri base-uri))
-      (signal 'jsonp-remote-error
-              (format "URI must use HTTP or HTTPS: %s" uri))))
+  (setq uri (jsonp-expand-relative-uri uri base-uri))
 
   (let* ((parsed-uri (url-generic-parse-url uri))
          (pointer (url-target parsed-uri))
@@ -343,6 +349,28 @@ indistinguishable.  Therefore this returns nil when json-obj is nil."
              (not (symbolp (car (car json-obj))))))
     t)))
 
+(defun jsonp--rewrite-local-refs (json-obj base-uri)
+  "Rewrite local JSON pointers in JSON-OBJ to absolute ones using BASE-URI."
+  (if (jsonp--primitive-p json-obj)
+      json-obj
+    (dolist (keyval (map-pairs json-obj))
+      (let ((key (car keyval))
+            (val (cdr keyval)))
+        (cond
+         ((or (equal key "$ref")
+              (equal key '$ref)
+              (equal key :$ref))
+          (when (and (stringp val)
+                   (string-prefix-p "#" val))
+              (map-put! json-obj key (concat base-uri val))))
+         ((jsonp--primitive-p val)
+          nil)
+         (t
+          ;; recurse and rebuild
+          (let ((updated (jsonp--rewrite-local-refs val base-uri)))
+            (map-put! json-obj key updated))))))
+    json-obj))
+
 ;; NOTE: json-schema explicitly disallows $refs from referring to other $refs
 (defun jsonp-replace-refs (json-obj &optional root-obj max-depth remote base-uri)
   "Given parsed JSON-OBJ expand any $ref modifying JSON-OBJ in place.
@@ -375,17 +403,24 @@ is raised but the partial replacement is returned."
             (map-put! json-obj key updated)))
          (t
           (if-let* ((ref-key (jsonp--map-contains-key val "$ref"))
-                    (ref-string (map-elt val ref-key))
-                    (new-val (if (string-prefix-p "#" ref-string)
+                    (ref-string (map-elt val ref-key)))
+              (let ((new-val (if (string-prefix-p "#" ref-string)
                                  (jsonp-resolve root-obj ref-string)
                                (if remote
                                    (jsonp-resolve-remote remote ref-string base-uri)
                                  (signal 'jsonp-remote-error
                                          (format "Cannot resolve %s remote resolution disabled" ref-string))))))
-              (if (jsonp--primitive-p new-val)
-                  ;; do not replace in strings
-                  (map-put! json-obj key new-val)
-                (map-put! json-obj key (jsonp-replace-refs new-val root-obj (1- max-depth) remote)))
+               (if (jsonp--primitive-p new-val)
+                   ;; do not replace in strings
+                   (map-put! json-obj key new-val)
+                 ;; When a ref is replaced its local refs should be renamed to
+                 ;; be absolute wrt the uri of the file they come from.
+                 ;; Otherwise the local uris may not be resolvable any more!
+                 (unless (string-prefix-p "#" ref-string)
+                   (let* ((remote-uri (jsonp-expand-relative-uri ref-string base-uri))
+                          (remote-base (car (split-string remote-uri "#"))))
+                     (setq new-val (jsonp--rewrite-local-refs new-val remote-base))))
+                 (map-put! json-obj key (jsonp-replace-refs new-val root-obj (1- max-depth) remote))))
             ;; otherwise recurse into a regular object
             (map-put! json-obj key (jsonp-replace-refs val root-obj max-depth remote)))))))
     ;; return possibly modified object

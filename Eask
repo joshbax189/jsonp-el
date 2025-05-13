@@ -1,8 +1,8 @@
 (package "jsonp"
-         "1.1.1"
+         "1.1.2"
          "Resolve JSON pointers in ELisp objects")
 
-(website-url "https://github.com/joshbax189/jsonp")
+(website-url "https://github.com/joshbax189/jsonp-el")
 (keywords "comm" "tools")
 
 (package-file "jsonp.el")

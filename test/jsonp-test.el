@@ -460,6 +460,87 @@ server: istio-envoy
                (jsonp-replace-refs json json nil (jsonp-remote) "https://example.com")
                '((api_key . "fizz") (keys . ((foo . ((x . 1) (y . 2)))))))))))
 
+(ert-deftest jsonp-replace-refs/test-remote-replace-nil ()
+  "Should replace when a nil value is resolved."
+  (let ((json (json-parse-string "{
+  \"api_key\": {
+    \"$ref\": \"./foo/bar/baz#/Bam\"
+  }
+}" :object-type 'alist)))
+    (with-mock
+      (mock (jsonp--url-retrieve-default "https://example.com/foo/bar/baz#/Bam") => "{ \"Bam\": {} }")
+      (should (equal
+               (jsonp-replace-refs json json nil (jsonp-remote :json-parser (lambda (s) (json-parse-string s :object-type 'alist))) "https://example.com")
+               '((api_key . nil)))))))
+
+(ert-deftest jsonp--rewrite-local-refs/test ()
+  "Should make no change to primitives and arrays."
+  (should (equal (jsonp--rewrite-local-refs 0 "https://example.com")
+                 0))
+  (should (equal (jsonp--rewrite-local-refs "foo" "https://example.com")
+                 "foo"))
+  (should (equal (jsonp--rewrite-local-refs ["a", "b"] "https://example.com")
+                 ["a", "b"])))
+
+(ert-deftest jsonp--rewrite-local-refs/test-alist ()
+  "Should expand local URLs in alists."
+  (let ((json (json-parse-string "{
+  \"api_key\": {
+    \"$ref\": \"#/x\"
+  }
+}" :object-type 'alist)))
+    (let ((result (jsonp--rewrite-local-refs json "https://example.com")))
+      (should (equal
+               result
+               '((api_key . (($ref . "https://example.com#/x")))))))))
+
+(ert-deftest jsonp--rewrite-local-refs/test-plist ()
+  "Should expand local URLs in plists."
+  (let ((json (json-parse-string "{
+  \"api_key\": {
+    \"$ref\": \"#/x\"
+  }
+}" :object-type 'plist)))
+    (let ((result (jsonp--rewrite-local-refs json "https://example.com")))
+      (should (equal
+               result
+               '(:api_key (:$ref "https://example.com#/x")))))))
+
+(ert-deftest jsonp--rewrite-local-refs/test-hash ()
+  "Should expand local URLs in hash tables."
+  (let ((json (json-parse-string "{
+  \"api_key\": {
+    \"$ref\": \"#/x\"
+  }
+}" :object-type 'hash-table)))
+    (let ((result (jsonp--rewrite-local-refs json "https://example.com")))
+      (should (equal
+               (map-nested-elt result '("api_key" "$ref"))
+               '"https://example.com#/x")))))
+
+(ert-deftest jsonp-replace-refs/test-remote-rewrite ()
+  "Should expand local URLs when replacing."
+  (let ((json (json-parse-string "{
+  \"api_key\": {
+    \"$ref\": \"./foo/bar/baz#/x\"
+  }
+}" :object-type 'alist)))
+    (with-mock
+      (mock (jsonp--url-retrieve-default "https://example.com/foo/bar/baz#/x") => "{
+  \"x\": {
+    \"$ref\": \"#/y\"
+  },
+  \"y\": 5
+}")
+      (let ((result (jsonp-replace-refs json json 1
+                                   (jsonp-remote :json-parser (lambda (s)
+                                                           (json-parse-string s :object-type 'alist)))
+                                   "https://example.com")))
+        (should (equal
+                 (map-nested-elt result '(api_key $ref))
+                 "https://example.com/foo/bar/baz#/y"
+                 ))))))
+
 ;;;; jsonp-nested-elt
 (ert-deftest jsonp-nested-elt/test ()
   "Should traverse a local $ref."
@@ -519,6 +600,15 @@ server: istio-envoy
             "../foo/bar#baz"
             "https://example.com/something")
            "https://example.com/foo/bar#baz")))
+
+(ert-deftest jsonp-expand-relative-uri/test-absolute ()
+  "Absolute URLs should not be expanded."
+  (should (equal (jsonp-expand-relative-uri "http://other.net/baz" "http://example.com/foo/bar")
+                 "http://other.net/baz")))
+
+(ert-deftest jsonp-expand-relative-uri/test-non-http ()
+  "Absolute URLs should not be expanded."
+  (should-error (jsonp-expand-relative-uri "ftp://other.net/baz" "http://example.com/foo/bar")))
 
 ;;;; jsonp--array-p
 (ert-deftest jsonp-array-p/test-vectors ()
